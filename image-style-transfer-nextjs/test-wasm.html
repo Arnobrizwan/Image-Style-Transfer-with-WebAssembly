@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebAssembly Test</title>
+</head>
+<body>
+    <h1>WebAssembly Test</h1>
+    <div id="status">Loading...</div>
+    <div id="styles"></div>
+    
+    <script>
+        async function testWasm() {
+            try {
+                const statusDiv = document.getElementById('status');
+                const stylesDiv = document.getElementById('styles');
+                
+                statusDiv.textContent = 'Loading WebAssembly module...';
+                
+                // Load the WebAssembly script
+                const script = document.createElement('script');
+                script.src = '/wasm/style_transfer_wasm.js';
+                script.type = 'text/javascript';
+                
+                await new Promise((resolve, reject) => {
+                    script.onload = resolve;
+                    script.onerror = reject;
+                    document.head.appendChild(script);
+                });
+                
+                statusDiv.textContent = 'Waiting for wasm_bindgen...';
+                
+                // Wait for the global wasm_bindgen to be available
+                while (!window.wasm_bindgen) {
+                    await new Promise(resolve => setTimeout(resolve, 10));
+                }
+                
+                statusDiv.textContent = 'Initializing WebAssembly...';
+                
+                // Initialize the WebAssembly module
+                await window.wasm_bindgen('/wasm/style_transfer_wasm_bg.wasm');
+                
+                statusDiv.textContent = 'Creating StyleTransferEngine...';
+                
+                // Create the engine
+                const engine = new window.wasm_bindgen.StyleTransferEngine();
+                
+                statusDiv.textContent = 'Getting styles...';
+                
+                // Get available styles
+                const styles = engine.get_styles();
+                
+                statusDiv.textContent = `Success! Loaded ${styles.length} styles:`;
+                
+                // Display styles
+                styles.forEach(style => {
+                    const styleDiv = document.createElement('div');
+                    styleDiv.innerHTML = `
+                        <h3>${style.name}</h3>
+                        <p>${style.description}</p>
+                        <p>Size: ${style.size_mb}MB, Dimensions: ${style.input_width}x${style.input_height}</p>
+                    `;
+                    stylesDiv.appendChild(styleDiv);
+                });
+                
+            } catch (error) {
+                document.getElementById('status').textContent = `Error: ${error.message}`;
+                console.error('Test failed:', error);
+            }
+        }
+        
+        testWasm();
+    </script>
+</body>
+</html>
