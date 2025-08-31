@@ -180,18 +180,32 @@ export default function RealtimeWebcam({ engine, selectedStyle, styleStrength }:
           let b = data[i + 2];
 
           switch (selectedStyle) {
-            case 'Van Gogh - Starry Night':
+            case 'van_gogh_starry_night':
               const swirl = Math.sin(x * 0.02) * Math.cos(y * 0.02) * 25;
               r = Math.min(255, r * 1.4 + swirl + 20);
               g = Math.min(255, g * 1.3 + swirl * 0.7 + 15);
               b = Math.min(255, b * 1.2 + swirl * 0.5 + 10);
               break;
               
-            case 'Cyberpunk Neon':
+            case 'cyberpunk_neon':
               const glow = Math.sin((x + y) * 0.01) * 30;
               r = Math.min(255, r * 1.5 + glow);
               g = Math.min(255, g * 0.8);
               b = Math.min(255, b * 1.7 + glow);
+              break;
+              
+            case 'picasso_cubist':
+              const blockX = Math.floor(x / 12) * 12;
+              const blockY = Math.floor(y / 12) * 12;
+              if ((blockX + blockY) % 24 === 0) {
+                r = Math.min(255, r * 1.8);
+                g = Math.min(255, g * 1.6);
+                b = Math.min(255, b * 1.4);
+              } else {
+                r = Math.max(0, r * 0.5);
+                g = Math.max(0, g * 0.6);
+                b = Math.max(0, b * 0.7);
+              }
               break;
               
             default:
@@ -219,7 +233,7 @@ export default function RealtimeWebcam({ engine, selectedStyle, styleStrength }:
     
     const canvas = processedCanvasRef.current;
     const link = document.createElement('a');
-    link.download = `webcam-style-${selectedStyle?.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}.png`;
+    link.download = `webcam-style-${selectedStyle?.replace(/_/g, '-').toLowerCase()}-${Date.now()}.png`;
     link.href = canvas.toDataURL();
     link.click();
   };
@@ -256,7 +270,7 @@ export default function RealtimeWebcam({ engine, selectedStyle, styleStrength }:
         
         {selectedStyle && (
           <p className="text-sm text-slate-600 mt-1">
-            Current style: <span className="font-medium">{selectedStyle}</span> ({styleStrength}% strength)
+            Current style: <span className="font-medium">{selectedStyle.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</span> ({styleStrength}% strength)
           </p>
         )}
       </div>

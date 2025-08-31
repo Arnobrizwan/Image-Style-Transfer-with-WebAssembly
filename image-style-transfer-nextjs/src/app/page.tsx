@@ -1,13 +1,13 @@
 'use client';
 
 import { useRef, useState, useEffect } from 'react';
-import { Send, Image as ImageIcon, Zap, Download, RotateCcw, Trash2, ChevronDown, ChevronUp, Eye, X, Camera } from 'lucide-react';
+import { Send, Image as ImageIcon, Zap, Download, RotateCcw, Trash2, ChevronDown, ChevronUp, Eye, X, Camera, Sparkles, Palette, Settings, Upload, Wand2 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
 // Load RealtimeWebcam component
 const RealtimeWebcam = dynamic(() => import('../components/RealtimeWebcam'), {
   ssr: false,
-  loading: () => <div className="text-white">Loading webcam...</div>
+  loading: () => <div className="text-gray-600">Loading webcam...</div>
 });
 
 interface ModelMetadata {
@@ -42,7 +42,6 @@ let wasmEngine: StyleTransferEngine | null = null;
 export default function StyleTransferChatbot() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
-
   const [engine, setEngine] = useState<StyleTransferEngine | null>(null);
   const [models, setModels] = useState<ModelMetadata[]>([]);
   const [currentImage, setCurrentImage] = useState<string | null>(null);
@@ -60,16 +59,66 @@ export default function StyleTransferChatbot() {
   const fileRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const addMessage = (role: 'user' | 'assistant', content: string, image?: string, isProcessing = false) => {
+    const message: Message = {
+      id: crypto.randomUUID(),
+      role,
+      content,
+      image,
+      timestamp: new Date(),
+      isProcessing,
+    };
+    setMessages(prev => [...prev, message]);
+    return message.id;
+  };
+
+  const updateMessage = (id: string, updates: Partial<Message>) => {
+    setMessages(prev => prev.map(msg => msg.id === id ? { ...msg, ...updates } : msg));
+  };
+
   // Initialize component and messages after hydration
   useEffect(() => {
     if (!isInitialized) {
       setMessages([{
         id: 'welcome',
         role: 'assistant', 
-        content: 'Welcome to AI Style Transfer powered by Rust + WebAssembly + ONNX. Upload an image and I\'ll transform it with neural style transfer models.',
+        content: 'Welcome to Neural Style Transfer Studio! I\'m your AI assistant for creating stunning artistic transformations. Upload an image and let\'s explore the power of neural networks together.',
         timestamp: new Date(),
       }]);
+      
+      // Set fallback models immediately
+      setModels([
+        {
+          name: 'van_gogh_starry_night',
+          size_mb: 2.4,
+          input_width: 256,
+          input_height: 256,
+          input_channels: 3,
+          model_url: '/models/van_gogh_starry_night.onnx',
+          description: 'Van Gogh - Starry Night'
+        },
+        {
+          name: 'picasso_cubist', 
+          size_mb: 2.1,
+          input_width: 256,
+          input_height: 256,
+          input_channels: 3,
+          model_url: '/models/picasso_cubist.onnx',
+          description: 'Picasso - Cubist'
+        },
+        {
+          name: 'cyberpunk_neon',
+          size_mb: 2.8, 
+          input_width: 256,
+          input_height: 256,
+          input_channels: 3,
+          model_url: '/models/cyberpunk_neon.onnx',
+          description: 'Cyberpunk - Neon'
+        }
+      ]);
+      
       setIsInitialized(true);
+      addMessage('assistant', '🚀 Ready to create! I\'m using advanced CPU processing for now. Upload an image and select a style to begin your artistic journey.');
     }
   }, [isInitialized]);
 
@@ -94,10 +143,10 @@ export default function StyleTransferChatbot() {
             try {
               await engine.process_image('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==', 'test', 0.5);
               setWasmLoaded(true);
-              addMessage('assistant', 'WebAssembly engine initialized successfully! You can now upload images for neural style transfer.');
+              addMessage('assistant', '🎉 WebAssembly engine activated! You now have access to high-performance neural style transfer powered by Rust + ONNX.');
             } catch (error) {
               setWasmLoaded(false);
-              addMessage('assistant', 'WebAssembly engine not available. Using enhanced CPU processing for style transfer.');
+              addMessage('assistant', '⚡ Enhanced CPU processing mode enabled. Your images will still look amazing with our optimized algorithms!');
             }
           } else {
             throw new Error('Failed to load any engine');
@@ -106,39 +155,7 @@ export default function StyleTransferChatbot() {
         } catch (error) {
           console.error('WebAssembly initialization failed:', error);
           setWasmLoaded(false);
-          
-          // Set fallback models
-          setModels([
-            {
-              name: 'van_gogh_starry_night',
-              size_mb: 2.4,
-              input_width: 256,
-              input_height: 256,
-              input_channels: 3,
-              model_url: '/models/van_gogh_starry_night.onnx',
-              description: 'Swirling brushstrokes and vibrant colors'
-            },
-            {
-              name: 'picasso_cubist', 
-              size_mb: 2.1,
-              input_width: 256,
-              input_height: 256,
-              input_channels: 3,
-              model_url: '/models/picasso_cubist.onnx',
-              description: 'Geometric abstraction and fragmented forms'
-            },
-            {
-              name: 'cyberpunk_neon',
-              size_mb: 2.8, 
-              input_width: 256,
-              input_height: 256,
-              input_channels: 3,
-              model_url: '/models/cyberpunk_neon.onnx',
-              description: 'Futuristic neon-lit digital enhancement'
-            }
-          ]);
-          
-          addMessage('assistant', 'Using CPU fallback mode for style transfer. Upload an image to begin!');
+          addMessage('assistant', '⚡ Enhanced CPU processing mode enabled. Your images will still look amazing with our optimized algorithms!');
         }
       }
     };
@@ -150,26 +167,9 @@ export default function StyleTransferChatbot() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const addMessage = (role: 'user' | 'assistant', content: string, image?: string, isProcessing = false) => {
-    const message: Message = {
-      id: crypto.randomUUID(),
-      role,
-      content,
-      image,
-      timestamp: new Date(),
-      isProcessing,
-    };
-    setMessages(prev => [...prev, message]);
-    return message.id;
-  };
-
-  const updateMessage = (id: string, updates: Partial<Message>) => {
-    setMessages(prev => prev.map(msg => msg.id === id ? { ...msg, ...updates } : msg));
-  };
-
   const handleImageUpload = async (file: File) => {
     if (file.size > 10 * 1024 * 1024) {
-      addMessage('assistant', 'Image is too large. Please upload an image under 10MB.');
+      addMessage('assistant', '⚠️ Image size exceeds 10MB limit. Please upload a smaller image for optimal processing.');
       return;
     }
 
@@ -177,21 +177,21 @@ export default function StyleTransferChatbot() {
       const imageUrl = await fileToDataUrl(file);
       setCurrentImage(imageUrl);
       
-      addMessage('user', 'I uploaded an image for neural style transfer', imageUrl);
-      addMessage('assistant', 'Image loaded successfully! Select a style below to apply neural style transfer using our ONNX models.');
+      addMessage('user', '📸 I\'ve uploaded an image for neural style transfer', imageUrl);
+      addMessage('assistant', '✨ Perfect! Your image is loaded and ready. Now choose your artistic style from the palette below and watch the magic happen!');
     } catch (error) {
-      addMessage('assistant', 'Failed to load the image. Please try a different file.');
+      addMessage('assistant', '❌ Failed to load the image. Please try a different file format (JPEG, PNG, WebP).');
     }
   };
 
   const processImage = async () => {
     if (!currentImage || !selectedStyle) {
-      addMessage('assistant', 'Please upload an image and select a style first.');
+      addMessage('assistant', '🎨 Please upload an image and select a style first. I need both to create your masterpiece!');
       return;
     }
 
     setIsProcessing(true);
-    const processingId = addMessage('assistant', `Running neural style transfer with ${selectedStyle} model at ${styleStrength}% strength...`, undefined, true);
+    const processingId = addMessage('assistant', `🎭 Processing with ${selectedStyle.replace(/_/g, ' ')} style at ${styleStrength}% intensity...`, undefined, true);
 
     try {
       let processedImageUrl: string;
@@ -207,7 +207,7 @@ export default function StyleTransferChatbot() {
       }
       
       updateMessage(processingId, {
-        content: `Neural style transfer complete! Here's your ${selectedStyle} transformation using ${wasmLoaded ? 'WebAssembly + ONNX' : 'CPU fallback'} processing:`,
+        content: `🎉 Style transfer complete! Here's your ${selectedStyle.replace(/_/g, ' ')} masterpiece, created with ${wasmLoaded ? 'WebAssembly + ONNX' : 'enhanced CPU'} processing:`,
         image: currentImage,
         processedImage: processedImageUrl,
         styleName: selectedStyle,
@@ -221,7 +221,7 @@ export default function StyleTransferChatbot() {
     } catch (error) {
       console.error('Processing failed:', error);
       updateMessage(processingId, {
-        content: 'Neural network processing failed. Please try again with a different image.',
+        content: '❌ Neural processing encountered an issue. Please try again with a different image or style.',
         isProcessing: false,
       });
     } finally {
@@ -255,14 +255,14 @@ export default function StyleTransferChatbot() {
           let b = data[i + 2];
 
           switch (styleName) {
-            case 'Van Gogh - Starry Night':
+            case 'van_gogh_starry_night':
               const swirl = Math.sin(x * 0.02) * Math.cos(y * 0.02) * 25;
               r = Math.min(255, r * 1.4 + swirl + 20);
               g = Math.min(255, g * 1.3 + swirl * 0.7 + 15);
               b = Math.min(255, b * 1.2 + swirl * 0.5 + 10);
               break;
               
-            case 'Picasso - Cubist':
+            case 'picasso_cubist':
               const blockX = Math.floor(x / 12) * 12;
               const blockY = Math.floor(y / 12) * 12;
               if ((blockX + blockY) % 24 === 0) {
@@ -276,23 +276,18 @@ export default function StyleTransferChatbot() {
               }
               break;
               
-            case 'Cyberpunk Neon':
+            case 'cyberpunk_neon':
               const glow = Math.sin((x + y) * 0.01) * 30;
               r = Math.min(255, r * 1.5 + glow);
               g = Math.min(255, g * 0.8);
               b = Math.min(255, b * 1.7 + glow);
               break;
               
-            case 'Monet - Water Lilies':
-              r = Math.min(255, r * 1.2 + 25);
-              g = Math.min(255, g * 1.25 + 30);
-              b = Math.min(255, b * 1.15 + 20);
-              break;
-              
-            case 'Anime Studio Ghibli':
-              r = Math.min(255, Math.round(r / 32) * 32 * 1.4);
-              g = Math.min(255, Math.round(g / 32) * 32 * 1.3);
-              b = Math.min(255, Math.round(b / 32) * 32 * 1.2);
+            default:
+              // Default enhancement
+              r = Math.min(255, r * 1.2);
+              g = Math.min(255, g * 1.2);
+              b = Math.min(255, b * 1.2);
               break;
           }
           
@@ -320,31 +315,25 @@ export default function StyleTransferChatbot() {
     const lowerContent = content.toLowerCase();
     
     if (lowerContent.includes('van gogh') || lowerContent.includes('starry night')) {
-      setSelectedStyle('Van Gogh - Starry Night');
-      addMessage('assistant', 'Van Gogh - Starry Night neural model selected! This model was trained on Van Gogh\'s masterpiece to recreate his distinctive swirling brushstrokes and vibrant color palette.');
+      setSelectedStyle('van_gogh_starry_night');
+      addMessage('assistant', '🎨 Van Gogh - Starry Night selected! This model captures the swirling brushstrokes and vibrant colors of Vincent\'s iconic masterpiece.');
     } else if (lowerContent.includes('picasso') || lowerContent.includes('cubist')) {
-      setSelectedStyle('Picasso - Cubist');
-      addMessage('assistant', 'Picasso - Cubist model selected! This neural network applies geometric abstraction and fragmented forms characteristic of Picasso\'s revolutionary style.');
+      setSelectedStyle('picasso_cubist');
+      addMessage('assistant', '🎭 Picasso - Cubist selected! Get ready for geometric abstraction and fragmented forms that revolutionized modern art.');
     } else if (lowerContent.includes('cyberpunk') || lowerContent.includes('neon')) {
-      setSelectedStyle('Cyberpunk Neon');
-      addMessage('assistant', 'Cyberpunk Neon model selected! This AI model enhances images with futuristic neon aesthetics and digital enhancement effects.');
-    } else if (lowerContent.includes('monet') || lowerContent.includes('water lilies')) {
-      setSelectedStyle('Monet - Water Lilies');
-      addMessage('assistant', 'Monet - Water Lilies model selected! This neural network applies impressionist techniques to capture light and atmospheric effects like Monet\'s famous paintings.');
-    } else if (lowerContent.includes('anime') || lowerContent.includes('ghibli')) {
-      setSelectedStyle('Anime Studio Ghibli');
-      addMessage('assistant', 'Anime Studio Ghibli model selected! This model transforms images with the distinctive animation style of Studio Ghibli films.');
+      setSelectedStyle('cyberpunk_neon');
+      addMessage('assistant', '🤖 Cyberpunk - Neon selected! Transform your images with futuristic aesthetics and glowing digital enhancements.');
     } else if (lowerContent.includes('apply') || lowerContent.includes('process') || lowerContent.includes('transform')) {
       if (currentImage && selectedStyle) {
         await processImage();
       } else {
-        addMessage('assistant', 'Please upload an image and select a neural style model first, then I can run the inference pipeline.');
+        addMessage('assistant', '📋 Please upload an image and select a neural style model first. Then I can run the inference pipeline for you!');
       }
     } else if (lowerContent.includes('webcam') || lowerContent.includes('camera')) {
       setShowWebcam(true);
-      addMessage('assistant', 'Webcam mode activated! You can now use real-time neural style transfer with your camera feed.');
+      addMessage('assistant', '📹 Webcam mode activated! Experience real-time neural style transfer with live camera feed. Perfect for live streaming and video calls!');
     } else {
-      addMessage('assistant', 'I can transform images using neural style transfer models trained on famous artistic styles. Upload an image first, then choose from Van Gogh, Picasso, Cyberpunk, Monet, or Anime styles for AI-powered transformation.');
+      addMessage('assistant', '🎨 I\'m your AI art assistant! I can transform images using neural style transfer models inspired by famous artists. Start by uploading an image, then choose from Van Gogh, Picasso, or Cyberpunk styles for AI-powered transformation.');
     }
   };
 
@@ -365,7 +354,7 @@ export default function StyleTransferChatbot() {
     setMessages([{
       id: 'welcome-clear',
       role: 'assistant',
-      content: 'Chat cleared! Upload a new image to get started with neural style transfer.',
+      content: '🧹 Chat cleared! Ready for a fresh start. Upload a new image to begin your next artistic creation!',
       timestamp: new Date(),
     }]);
     setCurrentImage(null);
@@ -380,7 +369,7 @@ export default function StyleTransferChatbot() {
     setMessages([{
       id: 'welcome-reset',
       role: 'assistant',
-      content: 'Session reset! Upload a new image to begin neural style transfer with ONNX models.',
+      content: '🔄 Session reset! All settings restored to defaults. Upload a new image to begin your neural style transfer journey!',
       timestamp: new Date(),
     }]);
   };
@@ -388,45 +377,57 @@ export default function StyleTransferChatbot() {
   // Show loading state until initialized
   if (!isInitialized) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-slate-600">Initializing Neural Style Transfer...</p>
+          <div className="relative">
+            <div className="w-20 h-20 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin mx-auto mb-6"></div>
+            <div className="absolute inset-0 w-20 h-20 border-4 border-transparent border-t-indigo-400 rounded-full animate-spin mx-auto" style={{animationDirection: 'reverse', animationDuration: '1.5s'}}></div>
+          </div>
+          <h2 className="text-2xl font-bold text-white mb-2">Neural Style Transfer Studio</h2>
+          <p className="text-purple-200">Initializing AI-powered artistic transformation...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100">
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-6 py-4">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+      {/* Modern Header */}
+      <header className="bg-white/80 backdrop-blur-xl border-b border-slate-200/50 sticky top-0 z-50 shadow-sm">
+        <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center">
-                <Zap className="w-6 h-6 text-white" />
+            <div className="flex items-center space-x-4">
+              <div className="relative">
+                <div className="w-12 h-12 bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 rounded-2xl flex items-center justify-center shadow-lg">
+                  <Sparkles className="w-7 h-7 text-white" />
+                </div>
+                <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white"></div>
               </div>
               <div>
-                <h1 className="text-xl font-bold text-slate-900">Neural Style Transfer</h1>
-                <p className="text-sm text-slate-500">
-                  {wasmLoaded ? 'Rust + WebAssembly + ONNX' : 'CPU Fallback Mode'}
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+                  Neural Style Studio
+                </h1>
+                <p className="text-sm text-slate-600">
+                  {wasmLoaded ? '🚀 WebAssembly + ONNX Active' : '⚡ Enhanced CPU Mode'}
                 </p>
               </div>
             </div>
             
-            <div className="flex items-center space-x-2">
-              <div className={`flex items-center px-3 py-1 rounded-lg text-xs ${
-                wasmLoaded ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+            <div className="flex items-center space-x-3">
+              <div className={`flex items-center px-4 py-2 rounded-xl text-sm font-medium ${
+                wasmLoaded 
+                  ? 'bg-green-100 text-green-700 border border-green-200' 
+                  : 'bg-amber-100 text-amber-700 border border-amber-200'
               }`}>
                 <div className={`w-2 h-2 rounded-full mr-2 ${
-                  wasmLoaded ? 'bg-green-500' : 'bg-yellow-500'
+                  wasmLoaded ? 'bg-green-500' : 'bg-amber-500'
                 }`}></div>
-                {wasmLoaded ? 'WASM Ready' : 'CPU Mode'}
+                {wasmLoaded ? 'WASM Ready' : 'CPU Enhanced'}
               </div>
               
               <button
                 onClick={clearChat}
-                className="flex items-center space-x-2 px-3 py-2 text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+                className="flex items-center space-x-2 px-4 py-2 text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-all duration-200 font-medium"
               >
                 <Trash2 className="w-4 h-4" />
                 <span>Clear</span>
@@ -434,7 +435,7 @@ export default function StyleTransferChatbot() {
               
               <button
                 onClick={resetSession}
-                className="flex items-center space-x-2 px-3 py-2 text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+                className="flex items-center space-x-2 px-4 py-2 text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-all duration-200 font-medium"
               >
                 <RotateCcw className="w-4 h-4" />
                 <span>Reset</span>
@@ -444,76 +445,155 @@ export default function StyleTransferChatbot() {
         </div>
       </header>
 
-      <div className="max-w-4xl mx-auto p-6">
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-[calc(100vh-140px)]">
+      <div className="max-w-7xl mx-auto px-6 py-8">
+        {/* Style Controls Panel */}
+        <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-xl border border-slate-200/50 mb-8 overflow-hidden">
+          <div className="bg-gradient-to-r from-indigo-50 to-purple-50 px-8 py-6 border-b border-slate-200/30">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <Palette className="w-6 h-6 text-indigo-600" />
+                <h2 className="text-xl font-bold text-slate-900">Artistic Style Controls</h2>
+              </div>
+              <button
+                onClick={() => setIsControlsCollapsed(!isControlsCollapsed)}
+                className="p-2 hover:bg-white/50 rounded-xl transition-all duration-200"
+              >
+                {isControlsCollapsed ? <ChevronDown className="w-5 h-5" /> : <ChevronUp className="w-5 h-5" />}
+              </button>
+            </div>
+          </div>
           
-          <div className="flex-1 overflow-y-auto p-6 space-y-4 chat-scroll">
-            {messages.map((message) => (
-              <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-                  message.role === 'user'
-                    ? 'bg-indigo-600 text-white rounded-br-sm'
-                    : 'bg-slate-100 text-slate-900 rounded-bl-sm'
-                }`}>
-                  {message.isProcessing ? (
-                    <div className="flex items-center space-x-2">
-                      <div className="flex space-x-1">
-                        <div className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce"></div>
-                        <div className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                        <div className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
-                      </div>
-                      <span className="text-sm">Processing...</span>
-                    </div>
+          {!isControlsCollapsed && (
+            <div className="p-8 space-y-6">
+              {/* Style Selection */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-3">
+                  🎨 Neural Style Model
+                </label>
+                <select
+                  value={selectedStyle}
+                  onChange={(e) => setSelectedStyle(e.target.value)}
+                  className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white/80 backdrop-blur-sm transition-all duration-200 text-slate-700 font-medium"
+                >
+                  <option value="">Choose your artistic style...</option>
+                  {models.map((model) => (
+                    <option key={model.name} value={model.name}>
+                      {model.description} • {model.size_mb}MB • {model.input_width}×{model.input_height}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Style Strength */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-3">
+                  ⚡ Style Intensity: {styleStrength}%
+                </label>
+                <div className="relative">
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={styleStrength}
+                    onChange={(e) => setStyleStrength(Number(e.target.value))}
+                    className="w-full h-3 bg-slate-200 rounded-lg appearance-none cursor-pointer slider-thumb"
+                  />
+                  <div className="flex justify-between text-xs text-slate-500 mt-2">
+                    <span className="font-medium">Original</span>
+                    <span className="font-medium">Full Stylization</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex space-x-4 pt-4">
+                <button
+                  onClick={processImage}
+                  disabled={!currentImage || !selectedStyle || isProcessing}
+                  className="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-3 rounded-xl font-semibold hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 flex items-center justify-center space-x-2"
+                >
+                  {isProcessing ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span>Processing...</span>
+                    </>
                   ) : (
-                    <div className="text-sm leading-relaxed">{message.content}</div>
+                    <>
+                      <Wand2 className="w-5 h-5" />
+                      <span>Apply Style Transfer</span>
+                    </>
                   )}
+                </button>
+                
+                <button
+                  onClick={() => setShowWebcam(!showWebcam)}
+                  className="flex items-center space-x-3 px-6 py-3 border-2 border-slate-300 rounded-xl hover:bg-slate-50 hover:border-slate-400 transition-all duration-200 font-semibold text-slate-700 hover:text-slate-900"
+                >
+                  <Camera className="w-5 h-5" />
+                  <span>{showWebcam ? 'Hide' : 'Show'} Webcam</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Main Chat Interface */}
+        <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-xl border border-slate-200/50 overflow-hidden">
+          {/* Messages Area */}
+          <div className="p-8 space-y-6 max-h-[600px] overflow-y-auto custom-scrollbar">
+            {messages.map((message) => (
+              <div
+                key={message.id}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                <div
+                  className={`max-w-lg px-6 py-4 rounded-2xl ${
+                    message.role === 'user'
+                      ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg'
+                      : 'bg-slate-100/80 text-slate-800 border border-slate-200/50'
+                  }`}
+                >
+                  <p className="text-sm leading-relaxed">{message.content}</p>
                   
                   {message.image && (
-                    <div className="mt-3">
-                      {message.processedImage ? (
-                        <div className="space-y-3">
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <div className="text-xs text-slate-600 mb-2 font-medium">Original</div>
-                              <img
-                                src={message.image}
-                                alt="Original"
-                                className="rounded-lg w-full h-32 object-cover border border-slate-200 cursor-pointer hover:shadow-lg transition-shadow"
-                                onClick={() => openImageModal(message.image!, 'Original Image')}
-                              />
-                            </div>
-                            <div>
-                              <div className="text-xs text-slate-600 mb-2 font-medium">{message.styleName?.split(' - ')[0]}</div>
-                              <img
-                                src={message.processedImage}
-                                alt="Styled"
-                                className="rounded-lg w-full h-32 object-cover border border-slate-200 cursor-pointer hover:shadow-lg transition-shadow"
-                                onClick={() => openImageModal(message.processedImage!, `${message.styleName} Style`)}
-                              />
-                            </div>
-                          </div>
-                          <div className="flex justify-center">
-                            <button
-                              onClick={() => downloadImage(message.processedImage!, message.styleName)}
-                              className="flex items-center space-x-1 text-xs bg-indigo-600 text-white hover:bg-indigo-700 px-3 py-2 rounded-lg transition-colors"
-                            >
-                              <Download className="w-3 h-3" />
-                              <span>Download Neural Style</span>
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <img
-                          src={message.image}
-                          alt="Uploaded"
-                          className="rounded-xl max-w-full h-auto border border-slate-200 cursor-pointer hover:shadow-lg transition-shadow"
-                          onClick={() => openImageModal(message.image!, 'Uploaded Image')}
-                        />
-                      )}
+                    <div className="mt-4">
+                      <img
+                        src={message.image}
+                        alt="Uploaded"
+                        className="w-full h-40 object-cover rounded-xl cursor-pointer border-2 border-white/20 hover:scale-105 transition-transform duration-200"
+                        onClick={() => openImageModal(message.image!, 'Original Image')}
+                      />
                     </div>
                   )}
                   
-                  <div className={`text-xs mt-2 ${message.role === 'user' ? 'text-indigo-100' : 'text-slate-500'}`}>
+                  {message.processedImage && (
+                    <div className="mt-4">
+                      <img
+                        src={message.processedImage}
+                        alt="Processed"
+                        className="w-full h-40 object-cover rounded-xl cursor-pointer border-2 border-white/20 hover:scale-105 transition-transform duration-200"
+                        onClick={() => openImageModal(message.processedImage!, `Stylized: ${message.styleName}`)}
+                      />
+                      <div className="flex justify-center mt-3">
+                        <button
+                          onClick={() => downloadImage(message.processedImage!, message.styleName)}
+                          className="flex items-center space-x-2 text-xs bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg transition-all duration-200 backdrop-blur-sm"
+                        >
+                          <Download className="w-4 h-4" />
+                          <span>Download Masterpiece</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {message.isProcessing && (
+                    <div className="mt-4 flex items-center space-x-3">
+                      <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                      <span className="text-sm font-medium">Processing your image...</span>
+                    </div>
+                  )}
+                  
+                  <div className={`text-xs mt-3 ${message.role === 'user' ? 'text-indigo-100' : 'text-slate-500'}`}>
                     {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </div>
                 </div>
@@ -522,83 +602,14 @@ export default function StyleTransferChatbot() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Style Controls */}
-          {currentImage && (
-            <div className="border-t border-slate-100">
-              <div 
-                className="flex items-center justify-between px-4 py-2 bg-slate-50 cursor-pointer text-sm"
-                onClick={() => setIsControlsCollapsed(!isControlsCollapsed)}
-              >
-                <div className="font-medium text-slate-700">Neural Style Controls</div>
-                {isControlsCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
-              </div>
-              
-              {!isControlsCollapsed && (
-                <div className="p-3 bg-slate-50 space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">ONNX Model</label>
-                      <select
-                        value={selectedStyle}
-                        onChange={(e) => setSelectedStyle(e.target.value)}
-                        className="w-full bg-white border border-slate-300 rounded-md px-3 py-2 text-xs focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
-                      >
-                        <option value="">Select neural model...</option>
-                        {models.map((model) => (
-                          <option key={model.name} value={model.name}>
-                            {model.name} ({model.size_mb}MB)
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">
-                        Style Strength: {styleStrength}%
-                      </label>
-                      <input
-                        type="range"
-                        min="10"
-                        max="100"
-                        step="10"
-                        value={styleStrength}
-                        onChange={(e) => setStyleStrength(parseInt(e.target.value))}
-                        className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-                  </div>
-                  
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={processImage}
-                      disabled={!selectedStyle || isProcessing}
-                      className="flex items-center justify-center space-x-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex-1"
-                    >
-                      <Zap className="w-4 h-4" />
-                      <span>{isProcessing ? 'Running Neural Network...' : 'Apply Neural Style'}</span>
-                    </button>
-                    
-                    <button
-                      onClick={() => setShowWebcam(!showWebcam)}
-                      className="flex items-center justify-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                    >
-                      <Camera className="w-4 h-4" />
-                      <span>{showWebcam ? 'Hide' : 'Live'}</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Input */}
-          <div className="border-t border-slate-100 p-4">
+          {/* Input Area */}
+          <div className="border-t border-slate-200/50 bg-gradient-to-r from-slate-50 to-blue-50 p-6">
             <div className="relative">
               <textarea
                 ref={inputRef}
-                rows={2}
-                placeholder="Upload an image and choose a neural style model..."
-                className="w-full resize-none rounded-xl bg-slate-50 border border-slate-200 px-4 py-3 pr-20 text-sm placeholder:text-slate-400 focus:bg-white focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                rows={3}
+                placeholder="Describe what you'd like to create, or upload an image to begin your artistic journey..."
+                className="w-full resize-none rounded-2xl bg-white/80 backdrop-blur-sm border border-slate-300 px-6 py-4 pr-24 text-sm placeholder:text-slate-400 focus:bg-white focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all duration-200 font-medium"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -606,7 +617,7 @@ export default function StyleTransferChatbot() {
                   }
                 }}
               />
-              <div className="absolute right-3 bottom-3 flex items-center space-x-2">
+              <div className="absolute right-4 bottom-4 flex items-center space-x-3">
                 <input
                   ref={fileRef}
                   type="file"
@@ -616,14 +627,14 @@ export default function StyleTransferChatbot() {
                 />
                 <button
                   onClick={() => fileRef.current?.click()}
-                  className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
+                  className="p-3 rounded-xl hover:bg-slate-100 transition-all duration-200 group"
                   title="Upload image"
                 >
-                  <ImageIcon className="w-5 h-5 text-slate-500" />
+                  <Upload className="w-5 h-5 text-slate-500 group-hover:text-indigo-600" />
                 </button>
                 <button
                   onClick={() => handleSendMessage()}
-                  className="p-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 transition-colors"
+                  className="p-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
                   title="Send message"
                 >
                   <Send className="w-5 h-5 text-white" />
@@ -635,48 +646,95 @@ export default function StyleTransferChatbot() {
 
         {/* Real-time Webcam Component */}
         {showWebcam && (
-          <div className="mt-6">
-            <RealtimeWebcam 
-              engine={engine}
-              selectedStyle={selectedStyle}
-              styleStrength={styleStrength}
-            />
+          <div className="mt-8">
+            <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-xl border border-slate-200/50 p-6">
+              <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center space-x-2">
+                <Camera className="w-5 h-5 text-indigo-600" />
+                <span>Live Webcam Style Transfer</span>
+              </h3>
+              <RealtimeWebcam 
+                engine={engine}
+                selectedStyle={selectedStyle}
+                styleStrength={styleStrength}
+              />
+            </div>
           </div>
         )}
       </div>
 
-      {/* Image Modal */}
+      {/* Enhanced Image Modal */}
       {showImageModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-          <div className="relative max-w-4xl max-h-full bg-white rounded-2xl overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b">
-              <h3 className="text-lg font-semibold text-slate-900">{modalTitle}</h3>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="relative max-w-5xl max-h-full bg-white rounded-3xl overflow-hidden shadow-2xl">
+            <div className="flex items-center justify-between p-6 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50">
+              <h3 className="text-xl font-bold text-slate-900">{modalTitle}</h3>
               <button
                 onClick={() => setShowImageModal(false)}
-                className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                className="p-2 hover:bg-slate-100 rounded-xl transition-all duration-200"
               >
-                <X className="w-5 h-5" />
+                <X className="w-6 h-6" />
               </button>
             </div>
-            <div className="p-4">
+            <div className="p-8">
               <img
                 src={modalImage}
                 alt={modalTitle}
-                className="max-w-full max-h-[70vh] object-contain mx-auto"
+                className="max-w-full max-h-[70vh] object-contain mx-auto rounded-2xl shadow-lg"
               />
             </div>
-            <div className="p-4 border-t flex justify-center">
+            <div className="p-6 border-t border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50 flex justify-center">
               <button
                 onClick={() => downloadImage(modalImage, modalTitle)}
-                className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium"
+                className="flex items-center space-x-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-6 py-3 rounded-xl font-semibold transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
               >
-                <Download className="w-4 h-4" />
+                <Download className="w-5 h-5" />
                 <span>Download Image</span>
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Custom CSS for enhanced styling */}
+      <style jsx>{`
+        .slider-thumb::-webkit-slider-thumb {
+          appearance: none;
+          height: 20px;
+          width: 20px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #6366f1, #8b5cf6);
+          cursor: pointer;
+          box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        }
+        
+        .slider-thumb::-moz-range-thumb {
+          height: 20px;
+          width: 20px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #6366f1, #8b5cf6);
+          cursor: pointer;
+          border: none;
+          box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 8px;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: rgba(241, 245, 249, 0.5);
+          border-radius: 4px;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: linear-gradient(135deg, #cbd5e1, #94a3b8);
+          border-radius: 4px;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: linear-gradient(135deg, #94a3b8, #64748b);
+        }
+      `}</style>
     </div>
   );
 }

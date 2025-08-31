@@ -1,240 +1,207 @@
-const CACHE_NAME = 'style-transfer-v2.0.0';
-const MODEL_CACHE_NAME = 'onnx-models-v1.0.0';
-const STATIC_CACHE_NAME = 'static-assets-v1.0.0';
+const CACHE_NAME = 'neural-style-transfer-v1';
+const STATIC_CACHE = 'static-v1';
+const DYNAMIC_CACHE = 'dynamic-v1';
 
-// Core application files
-const STATIC_ASSETS = [
+// Files to cache for offline support
+const STATIC_FILES = [
   '/',
-  '/index.html',
   '/_next/static/css/app/layout.css',
-  '/_next/static/chunks/webpack.js',
   '/_next/static/chunks/main-app.js',
+  '/_next/static/chunks/app-pages-internals.js',
   '/_next/static/chunks/app/page.js',
-  '/favicon.ico',
-];
-
-// WebAssembly files
-const WASM_ASSETS = [
+  '/_next/static/chunks/webpack.js',
+  '/_next/static/chunks/polyfills.js',
   '/wasm/style_transfer_wasm.js',
   '/wasm/style_transfer_wasm_bg.wasm',
-  '/wasm/style_transfer_wasm.d.ts',
-];
-
-// ONNX model files (lazy-loaded)
-const MODEL_FILES = [
+  '/models/registry.json',
   '/models/van_gogh_starry_night.onnx',
   '/models/picasso_cubist.onnx',
   '/models/cyberpunk_neon.onnx',
   '/models/monet_water_lilies.onnx',
-  '/models/anime_studio_ghibli.onnx',
+  '/models/anime_studio_ghibli.onnx'
 ];
 
-self.addEventListener('install', event => {
-  console.log('[SW] Installing service worker');
+// Install event - cache static files
+self.addEventListener('install', (event) => {
+  console.log('[SW] Installing service worker...');
   event.waitUntil(
-    Promise.all([
-      // Cache static assets
-      caches.open(STATIC_CACHE_NAME).then(cache => {
-        console.log('[SW] Caching static assets');
-        return cache.addAll(STATIC_ASSETS);
-      }),
-      // Cache WebAssembly files
-      caches.open(CACHE_NAME).then(cache => {
-        console.log('[SW] Caching WebAssembly assets');
-        return cache.addAll(WASM_ASSETS);
+    caches.open(STATIC_CACHE)
+      .then((cache) => {
+        console.log('[SW] Caching static files...');
+        return cache.addAll(STATIC_FILES);
       })
-    ])
+      .then(() => {
+        console.log('[SW] Static files cached successfully');
+        return self.skipWaiting();
+      })
+      .catch((error) => {
+        console.error('[SW] Failed to cache static files:', error);
+      })
   );
-  self.skipWaiting();
 });
 
-self.addEventListener('activate', event => {
-  console.log('[SW] Activating service worker');
+// Activate event - clean up old caches
+self.addEventListener('activate', (event) => {
+  console.log('[SW] Activating service worker...');
   event.waitUntil(
-    Promise.all([
-      // Clean old caches
-      caches.keys().then(cacheNames => {
+    caches.keys()
+      .then((cacheNames) => {
         return Promise.all(
-          cacheNames.map(cacheName => {
-            if (cacheName !== CACHE_NAME && 
-                cacheName !== MODEL_CACHE_NAME && 
-                cacheName !== STATIC_CACHE_NAME) {
+          cacheNames.map((cacheName) => {
+            if (cacheName !== STATIC_CACHE && cacheName !== DYNAMIC_CACHE) {
               console.log('[SW] Deleting old cache:', cacheName);
               return caches.delete(cacheName);
             }
           })
         );
-      }),
-      // Take control of all clients
-      self.clients.claim()
-    ])
-  );
-});
-
-self.addEventListener('fetch', event => {
-  const url = new URL(event.request.url);
-  
-  // Handle ONNX model requests with lazy loading
-  if (url.pathname.startsWith('/models/') && url.pathname.endsWith('.onnx')) {
-    event.respondWith(handleModelRequest(event.request));
-    return;
-  }
-  
-  // Handle WebAssembly files
-  if (url.pathname.startsWith('/wasm/')) {
-    event.respondWith(handleWasmRequest(event.request));
-    return;
-  }
-  
-  // Handle static assets
-  if (STATIC_ASSETS.includes(url.pathname) || url.pathname.startsWith('/_next/')) {
-    event.respondWith(handleStaticRequest(event.request));
-    return;
-  }
-  
-  // Default network-first strategy
-  event.respondWith(
-    fetch(event.request).catch(() => {
-      return caches.match(event.request);
-    })
-  );
-});
-
-// Specialized handler for ONNX model files
-async function handleModelRequest(request) {
-  const cache = await caches.open(MODEL_CACHE_NAME);
-  
-  // Check if model is already cached
-  const cachedResponse = await cache.match(request);
-  if (cachedResponse) {
-    console.log('[SW] Serving cached model:', request.url);
-    return cachedResponse;
-  }
-  
-  try {
-    console.log('[SW] Downloading model:', request.url);
-    const response = await fetch(request);
-    
-    if (response.ok) {
-      // Cache the model for offline use
-      cache.put(request, response.clone());
-      console.log('[SW] Model cached successfully:', request.url);
-      return response;
-    }
-    
-    throw new Error(`Failed to fetch model: ${response.status}`);
-  } catch (error) {
-    console.error('[SW] Model fetch failed:', error);
-    throw error;
-  }
-}
-
-// Handler for WebAssembly files
-async function handleWasmRequest(request) {
-  const cache = await caches.open(CACHE_NAME);
-  
-  // Cache-first strategy for WASM files
-  const cachedResponse = await cache.match(request);
-  if (cachedResponse) {
-    console.log('[SW] Serving cached WASM:', request.url);
-    return cachedResponse;
-  }
-  
-  try {
-    const response = await fetch(request);
-    if (response.ok) {
-      cache.put(request, response.clone());
-    }
-    return response;
-  } catch (error) {
-    console.error('[SW] WASM fetch failed:', error);
-    throw error;
-  }
-}
-
-// Handler for static assets
-async function handleStaticRequest(request) {
-  const cache = await caches.open(STATIC_CACHE_NAME);
-  
-  // Cache-first for static assets
-  const cachedResponse = await cache.match(request);
-  if (cachedResponse) {
-    return cachedResponse;
-  }
-  
-  try {
-    const response = await fetch(request);
-    if (response.ok) {
-      cache.put(request, response.clone());
-    }
-    return response;
-  } catch (error) {
-    // Fallback to cache if network fails
-    return caches.match(request);
-  }
-}
-
-// Message handling for cache management
-self.addEventListener('message', event => {
-  if (event.data && event.data.type === 'CACHE_MODEL') {
-    const modelUrl = event.data.url;
-    event.waitUntil(
-      caches.open(MODEL_CACHE_NAME).then(cache => {
-        return cache.add(modelUrl);
       })
-    );
+      .then(() => {
+        console.log('[SW] Service worker activated');
+        return self.clients.claim();
+      })
+  );
+});
+
+// Fetch event - serve from cache when offline
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  const url = new URL(request.url);
+
+  // Skip non-GET requests
+  if (request.method !== 'GET') {
+    return;
   }
-  
-  if (event.data && event.data.type === 'GET_CACHE_STATUS') {
-    event.waitUntil(
-      Promise.all([
-        caches.open(CACHE_NAME),
-        caches.open(MODEL_CACHE_NAME),
-        caches.open(STATIC_CACHE_NAME)
-      ]).then(([mainCache, modelCache, staticCache]) => {
-        return Promise.all([
-          mainCache.keys(),
-          modelCache.keys(),
-          staticCache.keys()
-        ]);
-      }).then(([mainKeys, modelKeys, staticKeys]) => {
-        event.ports[0].postMessage({
-          type: 'CACHE_STATUS',
-          data: {
-            wasm_files: mainKeys.length,
-            models_cached: modelKeys.length,
-            static_files: staticKeys.length,
-            total_cached: mainKeys.length + modelKeys.length + staticKeys.length
+
+  // Handle different types of requests
+  if (url.pathname.startsWith('/_next/') || 
+      url.pathname.startsWith('/wasm/') || 
+      url.pathname.startsWith('/models/')) {
+    // Cache-first strategy for static assets
+    event.respondWith(
+      caches.match(request)
+        .then((response) => {
+          if (response) {
+            console.log('[SW] Serving from cache:', url.pathname);
+            return response;
           }
-        });
-      })
+          
+          // Fetch from network and cache
+          return fetch(request)
+            .then((networkResponse) => {
+              if (networkResponse.ok) {
+                const responseClone = networkResponse.clone();
+                caches.open(DYNAMIC_CACHE)
+                  .then((cache) => {
+                    cache.put(request, responseClone);
+                  });
+              }
+              return networkResponse;
+            })
+            .catch(() => {
+              // Return cached version if network fails
+              return caches.match(request);
+            });
+        })
+    );
+  } else if (url.pathname === '/') {
+    // Network-first strategy for main page
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response.ok) {
+            const responseClone = response.clone();
+            caches.open(DYNAMIC_CACHE)
+              .then((cache) => {
+                cache.put(request, responseClone);
+              });
+          }
+          return response;
+        })
+        .catch(() => {
+          // Return cached version if network fails
+          return caches.match(request);
+        })
     );
   }
 });
 
 // Background sync for model preloading
-self.addEventListener('sync', event => {
+self.addEventListener('sync', (event) => {
   if (event.tag === 'preload-models') {
-    event.waitUntil(preloadAllModels());
+    console.log('[SW] Preloading models in background...');
+    event.waitUntil(preloadModels());
   }
 });
 
-async function preloadAllModels() {
-  console.log('[SW] Preloading all models in background');
-  const cache = await caches.open(MODEL_CACHE_NAME);
-  
-  const preloadPromises = MODEL_FILES.map(async (modelUrl) => {
-    try {
-      const response = await fetch(modelUrl);
-      if (response.ok) {
-        await cache.put(modelUrl, response);
-        console.log('[SW] Preloaded model:', modelUrl);
+// Preload all models for offline use
+async function preloadModels() {
+  try {
+    const cache = await caches.open(DYNAMIC_CACHE);
+    const modelUrls = [
+      '/models/van_gogh_starry_night.onnx',
+      '/models/picasso_cubist.onnx',
+      '/models/cyberpunk_neon.onnx',
+      '/models/monet_water_lilies.onnx',
+      '/models/anime_studio_ghibli.onnx'
+    ];
+
+    for (const modelUrl of modelUrls) {
+      try {
+        const response = await fetch(modelUrl);
+        if (response.ok) {
+          await cache.put(modelUrl, response);
+          console.log('[SW] Preloaded model:', modelUrl);
+        }
+      } catch (error) {
+        console.warn('[SW] Failed to preload model:', modelUrl, error);
       }
-    } catch (error) {
-      console.warn('[SW] Failed to preload model:', modelUrl, error);
     }
-  });
-  
-  await Promise.allSettled(preloadPromises);
-  console.log('[SW] Model preloading completed');
+    
+    console.log('[SW] Model preloading completed');
+  } catch (error) {
+    console.error('[SW] Model preloading failed:', error);
+  }
 }
+
+// Handle push notifications (for future features)
+self.addEventListener('push', (event) => {
+  console.log('[SW] Push notification received:', event);
+  
+  const options = {
+    body: 'Neural Style Transfer is ready to use!',
+    icon: '/favicon.ico',
+    badge: '/favicon.ico',
+    vibrate: [100, 50, 100],
+    data: {
+      dateOfArrival: Date.now(),
+      primaryKey: 1
+    }
+  };
+
+  event.waitUntil(
+    self.registration.showNotification('Neural Style Transfer', options)
+  );
+});
+
+// Handle notification clicks
+self.addEventListener('notificationclick', (event) => {
+  console.log('[SW] Notification clicked:', event);
+  event.notification.close();
+  
+  event.waitUntil(
+    clients.openWindow('/')
+  );
+});
+
+// Handle message events from main thread
+self.addEventListener('message', (event) => {
+  console.log('[SW] Message received:', event.data);
+  
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+  
+  if (event.data && event.data.type === 'PRELOAD_MODELS') {
+    preloadModels();
+  }
+});
