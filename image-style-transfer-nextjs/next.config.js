@@ -1,8 +1,5 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    appDir: true,
-  },
   webpack: (config, { isServer }) => {
     // Add WebAssembly support
     config.experiments = {
@@ -33,6 +30,7 @@ const nextConfig = {
 
     return config;
   },
+
   async headers() {
     return [
       {

@@ -16,7 +16,7 @@ A modern web application for AI-powered image style transfer, combining Next.js 
 
 - **Frontend**: Next.js 14, React 18, TypeScript, Tailwind CSS
 - **Backend**: Rust WebAssembly with wasm-bindgen
-- **AI/ML**: Custom neural style transfer (simulated ONNX models)
+- **AI/ML**: Custom neural style transfer (ONNX infrastructure ready, simulated effects working)
 - **Performance**: WebGPU acceleration, optimized WASM compilation
 - **Deployment**: Docker, Vercel, GitHub Actions CI/CD
 

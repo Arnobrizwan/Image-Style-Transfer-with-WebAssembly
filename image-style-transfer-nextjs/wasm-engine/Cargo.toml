@@ -2,44 +2,96 @@
 name = "style-transfer-wasm"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+default = ["onnx", "webgpu"]
+onnx = ["dep:tract-onnx", "dep:tract-core"]
+webgpu = ["web-sys/Gpu"]
+
 [dependencies]
-wasm-bindgen = "0.2"
+wasm-bindgen = "0.2.100"
 js-sys = "0.3"
-web-sys = { version = "0.3", features = [
+serde = { version = "1", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+console_error_panic_hook = "0.1"
+wasm-bindgen-futures = "0.4"
+wee_alloc = "0.4.5"
+
+# Core image processing - required for real implementation
+image = { version = "0.24", default-features = false, features = ["png", "jpeg"] }
+ndarray = "0.15"
+
+# JSON handling for model metadata
+serde_json = "1.0"
+
+# Fix for WASM target
+getrandom = { version = "0.2", features = ["js"] }
+
+# ONNX stack (for actual neural network inference)
+tract-onnx = { version = "0.21", optional = true }
+tract-core = { version = "0.21", optional = true }
+
+[dependencies.web-sys]
+version = "0.3.77"  # Use a specific version that supports WebGPU
+features = [
+  # Basic web APIs
   "console",
   "Window",
-  "Document",
+  "Document", 
   "Element",
+  
+  # Canvas and image handling
   "HtmlCanvasElement",
-  "HtmlImageElement",
   "CanvasRenderingContext2d",
+  "HtmlImageElement",
   "ImageData",
+  
+  # File handling
   "File",
   "FileReader",
   "Blob",
   "Url",
+  
+  # HTTP requests for model loading
   "Request",
-  "RequestInit",
+  "RequestInit", 
   "RequestMode",
   "Response",
   "Headers",
+  
+  # Browser APIs
   "Navigator",
-] }
-wasm-bindgen-futures = "0.4"
-serde = { version = "1.0", features = ["derive"] }
-serde-wasm-bindgen = "0.4"
-image = { version = "0.24", default-features = false, features = ["png", "jpeg"] }
-wee_alloc = "0.4.5"
+  "Performance",
+  
+  # Additional canvas features
+  "OffscreenCanvas",
+  "OffscreenCanvasRenderingContext2d",
+  
+  # Error handling
+  "DomException",
+]
 
-[dependencies.wasm-bindgen-test]
-version = "0.3"
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
 
+# Build optimizations for WebAssembly
 [profile.release]
-opt-level = "s"
 lto = true
-debug = false
+opt-level = "s"  # Optimize for size
+codegen-units = 1
 panic = "abort"
+debug = false
+
+# Development profile for faster builds during development
+[profile.dev]
+opt-level = 0
+debug = true
+panic = "abort"
+
+# Package metadata for wasm-pack
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-Os", "--enable-bulk-memory"]

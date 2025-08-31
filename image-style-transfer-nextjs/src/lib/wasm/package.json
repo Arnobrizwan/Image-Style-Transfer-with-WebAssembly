@@ -1,0 +1,16 @@
+{
+  "name": "style-transfer-wasm",
+  "type": "module",
+  "version": "0.1.0",
+  "license": "MIT",
+  "files": [
+    "style_transfer_wasm_bg.wasm",
+    "style_transfer_wasm.js",
+    "style_transfer_wasm.d.ts"
+  ],
+  "main": "style_transfer_wasm.js",
+  "types": "style_transfer_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

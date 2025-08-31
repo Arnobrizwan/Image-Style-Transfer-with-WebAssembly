@@ -1,0 +1,42 @@
+[
+    {
+      "name": "anime_studio_ghibli",
+      "title": "Anime Studio Ghibli",
+      "description": "Japanese animation-inspired transformation with vibrant colors and bold outlines.",
+      "url": "/models/anime_studio_ghibli.onnx",
+      "input_width": 256,
+      "input_height": 256
+    },
+    {
+      "name": "cyberpunk_neon",
+      "title": "Cyberpunk Neon",
+      "description": "Futuristic neon-lit digital enhancement with glowing highlights and high contrast.",
+      "url": "/models/cyberpunk_neon.onnx",
+      "input_width": 256,
+      "input_height": 256
+    },
+    {
+      "name": "monet_water_lilies",
+      "title": "Monet - Water Lilies",
+      "description": "Soft, dreamy brushwork capturing light and movement inspired by Claude Monet.",
+      "url": "/models/monet_water_lilies.onnx",
+      "input_width": 256,
+      "input_height": 256
+    },
+    {
+      "name": "picasso_cubist",
+      "title": "Picasso - Cubist",
+      "description": "Geometric abstraction and fragmented forms in the style of Pablo Picasso.",
+      "url": "/models/picasso_cubist.onnx",
+      "input_width": 256,
+      "input_height": 256
+    },
+    {
+      "name": "van_gogh_starry_night",
+      "title": "Van Gogh - Starry Night",
+      "description": "Swirling brushstrokes and vibrant colors inspired by Vincent van Gogh.",
+      "url": "/models/van_gogh_starry_night.onnx",
+      "input_width": 256,
+      "input_height": 256
+    }
+  ]
