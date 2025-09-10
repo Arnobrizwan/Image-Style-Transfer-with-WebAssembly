@@ -130,7 +130,7 @@ export default function StyleTransferChatbot() {
           console.log('Loading WebAssembly module...');
           
           // Import the simple loader
-          const { loadWasmModule } = await import('../lib/wasmLoader');
+          const { loadWasmModule, isWebGPUAvailable } = await import('../lib/wasmLoader');
           const engine = await loadWasmModule() as StyleTransferEngine;
           
           if (engine) {
@@ -143,7 +143,14 @@ export default function StyleTransferChatbot() {
             try {
               await engine.process_image('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==', 'test', 0.5);
               setWasmLoaded(true);
-              addMessage('assistant', '🎉 WebAssembly engine activated! You now have access to high-performance neural style transfer powered by Rust + ONNX.');
+              
+              // Check for WebGPU availability
+              const webgpuAvailable = isWebGPUAvailable();
+              if (webgpuAvailable) {
+                addMessage('assistant', '🚀 WebAssembly + WebGPU engine activated! You now have access to ultra-high-performance neural style transfer powered by Rust + ONNX + GPU acceleration.');
+              } else {
+                addMessage('assistant', '🎉 WebAssembly engine activated! You now have access to high-performance neural style transfer powered by Rust + ONNX.');
+              }
             } catch (error) {
               setWasmLoaded(false);
               addMessage('assistant', '⚡ Enhanced CPU processing mode enabled. Your images will still look amazing with our optimized algorithms!');
@@ -196,15 +203,9 @@ export default function StyleTransferChatbot() {
     try {
       let processedImageUrl: string;
 
-      if (wasmLoaded && engine) {
-        // Use real WebAssembly + ONNX processing
-        console.log('Using WebAssembly + ONNX pipeline');
-        processedImageUrl = await engine.process_image(currentImage, selectedStyle, styleStrength / 100);
-      } else {
-        // Fallback to enhanced CPU processing
-        console.log('Using fallback CPU processing');
-        processedImageUrl = await processFallback(currentImage, selectedStyle, styleStrength);
-      }
+      // Use the integrated processing function that automatically selects the best engine
+      const { processImageWithBestEngine } = await import('../lib/wasmLoader');
+      processedImageUrl = await processImageWithBestEngine(currentImage, selectedStyle, styleStrength / 100);
       
       updateMessage(processingId, {
         content: `🎉 Style transfer complete! Here's your ${selectedStyle.replace(/_/g, ' ')} masterpiece, created with ${wasmLoaded ? 'WebAssembly + ONNX' : 'enhanced CPU'} processing:`,

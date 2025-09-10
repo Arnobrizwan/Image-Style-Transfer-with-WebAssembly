@@ -7,7 +7,6 @@ use std::collections::HashMap;
 
 // ONNX inference imports
 use tract_onnx::prelude::*;
-use tract_core::internal::*;
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
@@ -130,29 +129,52 @@ impl StyleTransferEngine {
     }
 
     async fn initialize_webgpu(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        // Get WebGPU adapter and device
-        let window = web_sys::window().unwrap();
+        // Check if WebGPU is available
+        let window = web_sys::window().ok_or("No window object")?;
         let navigator = window.navigator();
         
-        // Request WebGPU adapter
+        // Use proper web-sys API for WebGPU
         let gpu = js_sys::Reflect::get(&navigator, &"gpu".into())
-            .map_err(|_| "Failed to get GPU object")?;
-        let adapter = js_sys::Reflect::get(&gpu, &"requestAdapter".into())
+            .map_err(|_| "WebGPU not supported")?;
+        
+        if gpu.is_undefined() {
+            return Err("WebGPU not supported in this browser".into());
+        }
+        
+        // Request adapter using proper Promise handling
+        let adapter_promise = js_sys::Reflect::get(&gpu, &"requestAdapter".into())
+            .map_err(|_| "Failed to get requestAdapter")?;
+        
+        if !adapter_promise.is_object() {
+            return Err("requestAdapter is not a function".into());
+        }
+        
+        // Convert to a Rust Future
+        let adapter_promise_js = adapter_promise.dyn_into::<js_sys::Promise>()
+            .map_err(|_| "Failed to convert to Promise")?;
+        let adapter_future = wasm_bindgen_futures::JsFuture::from(adapter_promise_js);
+        let adapter_result = adapter_future.await
             .map_err(|_| "Failed to get adapter")?;
         
-        if adapter.is_undefined() {
+        if adapter_result.is_null() || adapter_result.is_undefined() {
             return Err("No WebGPU adapter available".into());
         }
         
         console_log!("WebGPU adapter obtained successfully");
         
         // Request device
-        let device = js_sys::Reflect::get(&adapter, &"requestDevice".into())
-            .map_err(|_| "Failed to get device")?;
+        let device_promise = js_sys::Reflect::get(&adapter_result, &"requestDevice".into())
+            .map_err(|_| "Failed to get requestDevice")?;
         
-        if device.is_undefined() {
-            return Err("Failed to get WebGPU device".into());
+        if !device_promise.is_object() {
+            return Err("requestDevice is not a function".into());
         }
+        
+        let device_promise_js = device_promise.dyn_into::<js_sys::Promise>()
+            .map_err(|_| "Failed to convert to Promise")?;
+        let device_future = wasm_bindgen_futures::JsFuture::from(device_promise_js);
+        let _device = device_future.await
+            .map_err(|_| "Failed to get device")?;
         
         console_log!("WebGPU device obtained successfully");
         Ok(())
@@ -210,11 +232,22 @@ impl StyleTransferEngine {
         }
     }
 
-    fn load_tract_model(&mut self, _model_bytes: &[u8], model_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-        // For now, we'll use simulated effects while we work on real ONNX integration
-        // In a production environment, this would parse and load the actual ONNX model
-        console_log!("ONNX model loading placeholder for: {}", model_name);
-        console_log!("Real ONNX inference will be enabled in production");
+    fn load_tract_model(&mut self, model_bytes: &[u8], model_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+        console_log!("Loading ONNX model with tract: {}", model_name);
+        
+        // Create a tract model from the ONNX bytes
+        let model = tract_onnx::onnx()
+            .model_for_read(&mut std::io::Cursor::new(model_bytes))?;
+        
+        // Optimize the model for inference
+        let model = model
+            .into_optimized()?
+            .into_runnable()?;
+        
+        // Store the model in our HashMap
+        self.tract_models.insert(model_name.to_string(), model);
+        
+        console_log!("ONNX model loaded successfully: {}", model_name);
         Ok(())
     }
 
@@ -264,17 +297,26 @@ impl StyleTransferEngine {
         img.set_src(image_data_url);
         wasm_bindgen_futures::JsFuture::from(img_promise).await?;
 
+        // Get model metadata for proper resolution
+        let model_metadata = self.model_registry
+            .iter()
+            .find(|m| m.name == style_name)
+            .ok_or_else(|| JsValue::from_str("Model not found"))?;
+        
+        let input_width = model_metadata.input_width;
+        let input_height = model_metadata.input_height;
+        
         // Set canvas size and draw image
-        canvas.set_width(256);
-        canvas.set_height(256);
-        ctx.draw_image_with_html_image_element_and_dw_and_dh(&img, 0.0, 0.0, 256.0, 256.0)?;
+        canvas.set_width(input_width);
+        canvas.set_height(input_height);
+        ctx.draw_image_with_html_image_element_and_dw_and_dh(&img, 0.0, 0.0, input_width as f64, input_height as f64)?;
 
-        let image_data = ctx.get_image_data(0.0, 0.0, 256.0, 256.0)?;
+        let image_data = ctx.get_image_data(0.0, 0.0, input_width as f64, input_height as f64)?;
         let clamped = image_data.data(); // Clamped<Vec<u8>>
         let pixels: Vec<u8> = clamped.0; // take ownership of inner Vec<u8>
 
         // Convert to normalized tensor (RGB, ignore alpha)
-        let mut input_tensor = Vec::with_capacity(256 * 256 * 3);
+        let mut input_tensor = Vec::with_capacity((input_width * input_height * 3) as usize);
         for i in (0..pixels.len()).step_by(4) {
             let r = pixels[i] as f32 / 255.0;
             let g = pixels[i + 1] as f32 / 255.0;
@@ -295,8 +337,9 @@ impl StyleTransferEngine {
         };
 
         // Build RGBA buffer in a plain Vec<u8>
-        let mut output_pixels: Vec<u8> = vec![0; 256 * 256 * 4];
-        for i in 0..(256 * 256) {
+        let pixel_count = (input_width * input_height) as usize;
+        let mut output_pixels: Vec<u8> = vec![0; pixel_count * 4];
+        for i in 0..pixel_count {
             let r = (blended_tensor[i * 3] * 255.0).clamp(0.0, 255.0) as u8;
             let g = (blended_tensor[i * 3 + 1] * 255.0).clamp(0.0, 255.0) as u8;
             let b = (blended_tensor[i * 3 + 2] * 255.0).clamp(0.0, 255.0) as u8;
@@ -312,8 +355,8 @@ impl StyleTransferEngine {
         // ImageData expects a Clamped<&[u8]> slice
         let output_image_data = ImageData::new_with_u8_clamped_array_and_sh(
             wasm_bindgen::Clamped(&output_pixels[..]),
-            256,
-            256,
+            input_width,
+            input_height,
         )?;
         
         ctx.put_image_data(&output_image_data, 0.0, 0.0)?;
@@ -326,7 +369,7 @@ impl StyleTransferEngine {
         
         // Try to use real ONNX model first
         if let Some(plan) = self.tract_models.get(style_name) {
-            match self.run_onnx_inference(plan, input_tensor) {
+            match self.run_onnx_inference(plan, input_tensor, style_name) {
                 Ok(result) => {
                     console_log!("ONNX inference successful for: {}", style_name);
                     return Ok(result);
@@ -342,9 +385,18 @@ impl StyleTransferEngine {
         self.run_simulated_inference(input_tensor, style_name)
     }
 
-    fn run_onnx_inference(&self, plan: &SimplePlan<TypedFact, Box<dyn TypedOp>, Graph<TypedFact, Box<dyn TypedOp>>>, input_tensor: &[f32]) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+    fn run_onnx_inference(&self, plan: &SimplePlan<TypedFact, Box<dyn TypedOp>, Graph<TypedFact, Box<dyn TypedOp>>>, input_tensor: &[f32], style_name: &str) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        // Get model metadata for proper resolution
+        let model_metadata = self.model_registry
+            .iter()
+            .find(|m| m.name == style_name)
+            .ok_or_else(|| "Model not found")?;
+        
+        let input_width = model_metadata.input_width;
+        let input_height = model_metadata.input_height;
+        
         // Prepare input tensor for ONNX model
-        let input_shape = vec![1, 3, 256, 256]; // Batch, Channels, Height, Width
+        let input_shape = vec![1, 3, input_height as usize, input_width as usize]; // Batch, Channels, Height, Width
         
         // Create input tensor
         let input_tensor = Tensor::from_shape(&input_shape, input_tensor)?;
@@ -361,11 +413,20 @@ impl StyleTransferEngine {
     fn run_simulated_inference(&self, input_tensor: &[f32], style_name: &str) -> Result<Vec<f32>, JsValue> {
         let mut output_tensor = Vec::with_capacity(input_tensor.len());
         
+        // Get model metadata for proper resolution
+        let model_metadata = self.model_registry
+            .iter()
+            .find(|m| m.name == style_name)
+            .ok_or_else(|| JsValue::from_str("Model not found"))?;
+        
+        let width = model_metadata.input_width;
+        let _height = model_metadata.input_height;
+        
         for (i, &pixel) in input_tensor.iter().enumerate() {
             let channel = i % 3;
             let position = i / 3;
-            let x = position % 256;
-            let y = position / 256;
+            let x = position % width as usize;
+            let y = position / width as usize;
             
             let processed_pixel = match style_name {
                 "van_gogh_starry_night" => {

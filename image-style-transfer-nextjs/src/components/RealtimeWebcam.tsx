@@ -109,7 +109,7 @@ export default function RealtimeWebcam({ engine, selectedStyle, styleStrength }:
     }
   };
 
-  // Process image with style transfer
+  // Process image with style transfer using the best available engine
   const processImage = async (imageDataUrl: string) => {
     if (!processedCanvasRef.current) return;
     
@@ -118,9 +118,10 @@ export default function RealtimeWebcam({ engine, selectedStyle, styleStrength }:
     try {
       let processedImageUrl: string;
       
-      if (engine && selectedStyle) {
-        // Use WebAssembly engine
-        processedImageUrl = await engine.process_image(imageDataUrl, selectedStyle, styleStrength / 100);
+      if (selectedStyle) {
+        // Use the integrated processing function that automatically selects the best engine
+        const { processImageWithBestEngine } = await import('../lib/wasmLoader');
+        processedImageUrl = await processImageWithBestEngine(imageDataUrl, selectedStyle, styleStrength / 100);
       } else {
         // Fallback CPU processing
         processedImageUrl = await processFallback(imageDataUrl);
@@ -164,17 +165,22 @@ export default function RealtimeWebcam({ engine, selectedStyle, styleStrength }:
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d')!;
         
-        canvas.width = 320;
-        canvas.height = 240;
-        ctx.drawImage(img, 0, 0, 320, 240);
+        // Use model metadata for resolution if available, otherwise use video dimensions
+        const model = engine?.get_models?.()?.find((m: any) => m.name === selectedStyle);
+        const width = model?.input_width || 320;
+        const height = model?.input_height || 240;
         
-        const imageData = ctx.getImageData(0, 0, 320, 240);
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        const imageData = ctx.getImageData(0, 0, width, height);
         const data = imageData.data;
         
         // Apply simple style effects based on selected style
         for (let i = 0; i < data.length; i += 4) {
-          const x = (i / 4) % 320;
-          const y = Math.floor((i / 4) / 320);
+          const x = (i / 4) % width;
+          const y = Math.floor((i / 4) / width);
           let r = data[i];
           let g = data[i + 1];
           let b = data[i + 2];
@@ -206,6 +212,21 @@ export default function RealtimeWebcam({ engine, selectedStyle, styleStrength }:
                 g = Math.max(0, g * 0.6);
                 b = Math.max(0, b * 0.7);
               }
+              break;
+              
+            case 'monet_water_lilies':
+              const softLight = 0.05 * (1.0 + Math.sin((x + y) * 0.001));
+              r = Math.min(255, r * 1.1 + softLight * 255);
+              g = Math.min(255, g * 1.1 + softLight * 255);
+              b = Math.min(255, b * 1.1 + softLight * 255);
+              break;
+              
+            case 'anime_studio_ghibli':
+              const quantized = Math.round(r * 6) / 6;
+              const saturated = quantized > 0.5 ? Math.min(255, quantized * 1.3 * 255) : quantized * 0.9 * 255;
+              r = saturated;
+              g = Math.min(255, g * 1.2);
+              b = Math.min(255, b * 1.1);
               break;
               
             default:

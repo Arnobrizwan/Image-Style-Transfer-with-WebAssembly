@@ -1,16 +1,15 @@
-const CACHE_NAME = 'neural-style-transfer-v1';
-const STATIC_CACHE = 'static-v1';
-const DYNAMIC_CACHE = 'dynamic-v1';
+// Service Worker for Neural Style Transfer App
+// Provides offline support and caching for WASM, models, and assets
 
-// Files to cache for offline support
-const STATIC_FILES = [
+const CACHE_NAME = 'neural-style-transfer-v1.0.0';
+const STATIC_CACHE = 'neural-style-static-v1.0.0';
+const DYNAMIC_CACHE = 'neural-style-dynamic-v1.0.0';
+
+// Essential assets to cache for offline functionality
+const STATIC_ASSETS = [
   '/',
-  '/_next/static/css/app/layout.css',
-  '/_next/static/chunks/main-app.js',
-  '/_next/static/chunks/app-pages-internals.js',
-  '/_next/static/chunks/app/page.js',
-  '/_next/static/chunks/webpack.js',
-  '/_next/static/chunks/polyfills.js',
+  '/index.html',
+  '/manifest.json',
   '/wasm/style_transfer_wasm.js',
   '/wasm/style_transfer_wasm_bg.wasm',
   '/models/registry.json',
@@ -18,24 +17,28 @@ const STATIC_FILES = [
   '/models/picasso_cubist.onnx',
   '/models/cyberpunk_neon.onnx',
   '/models/monet_water_lilies.onnx',
-  '/models/anime_studio_ghibli.onnx'
+  '/models/anime_studio_ghibli.onnx',
+  '/_next/static/css/',
+  '/_next/static/js/',
+  '/favicon.ico'
 ];
 
-// Install event - cache static files
+// Install event - cache essential assets
 self.addEventListener('install', (event) => {
   console.log('[SW] Installing service worker...');
+  
   event.waitUntil(
     caches.open(STATIC_CACHE)
       .then((cache) => {
-        console.log('[SW] Caching static files...');
-        return cache.addAll(STATIC_FILES);
+        console.log('[SW] Caching static assets...');
+        return cache.addAll(STATIC_ASSETS);
       })
       .then(() => {
-        console.log('[SW] Static files cached successfully');
+        console.log('[SW] Static assets cached successfully');
         return self.skipWaiting();
       })
       .catch((error) => {
-        console.error('[SW] Failed to cache static files:', error);
+        console.error('[SW] Failed to cache static assets:', error);
       })
   );
 });
@@ -43,6 +46,7 @@ self.addEventListener('install', (event) => {
 // Activate event - clean up old caches
 self.addEventListener('activate', (event) => {
   console.log('[SW] Activating service worker...');
+  
   event.waitUntil(
     caches.keys()
       .then((cacheNames) => {
@@ -62,81 +66,157 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch event - serve from cache when offline
+// Fetch event - serve cached content when offline
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
-
+  
   // Skip non-GET requests
   if (request.method !== 'GET') {
     return;
   }
-
-  // Handle different types of requests
-  if (url.pathname.startsWith('/_next/') || 
-      url.pathname.startsWith('/wasm/') || 
-      url.pathname.startsWith('/models/')) {
-    // Cache-first strategy for static assets
-    event.respondWith(
-      caches.match(request)
-        .then((response) => {
-          if (response) {
-            console.log('[SW] Serving from cache:', url.pathname);
-            return response;
-          }
-          
-          // Fetch from network and cache
-          return fetch(request)
-            .then((networkResponse) => {
-              if (networkResponse.ok) {
-                const responseClone = networkResponse.clone();
-                caches.open(DYNAMIC_CACHE)
-                  .then((cache) => {
-                    cache.put(request, responseClone);
-                  });
-              }
-              return networkResponse;
-            })
-            .catch(() => {
-              // Return cached version if network fails
-              return caches.match(request);
-            });
-        })
-    );
-  } else if (url.pathname === '/') {
-    // Network-first strategy for main page
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (response.ok) {
-            const responseClone = response.clone();
-            caches.open(DYNAMIC_CACHE)
+  
+  // Skip chrome-extension and other non-http requests
+  if (!url.protocol.startsWith('http')) {
+    return;
+  }
+  
+  event.respondWith(
+    caches.match(request)
+      .then((cachedResponse) => {
+        // Return cached version if available
+        if (cachedResponse) {
+          console.log('[SW] Serving from cache:', url.pathname);
+          return cachedResponse;
+        }
+        
+        // Otherwise, fetch from network
+        return fetch(request)
+          .then((response) => {
+            // Don't cache non-successful responses
+            if (!response || response.status !== 200 || response.type !== 'basic') {
+              return response;
+            }
+            
+            // Clone the response for caching
+            const responseToCache = response.clone();
+            
+            // Determine which cache to use based on request type
+            let targetCache = DYNAMIC_CACHE;
+            if (url.pathname.startsWith('/wasm/') || 
+                url.pathname.startsWith('/models/') ||
+                url.pathname.startsWith('/_next/static/')) {
+              targetCache = STATIC_CACHE;
+            }
+            
+            // Cache the response
+            caches.open(targetCache)
               .then((cache) => {
-                cache.put(request, responseClone);
+                console.log('[SW] Caching response:', url.pathname);
+                cache.put(request, responseToCache);
+              })
+              .catch((error) => {
+                console.warn('[SW] Failed to cache response:', error);
               });
-          }
-          return response;
-        })
-        .catch(() => {
-          // Return cached version if network fails
-          return caches.match(request);
-        })
+            
+            return response;
+          })
+          .catch((error) => {
+            console.log('[SW] Network request failed:', url.pathname, error);
+            
+            // Return offline fallback for specific requests
+            if (url.pathname === '/' || url.pathname === '/index.html') {
+              return caches.match('/index.html');
+            }
+            
+            // Return a custom offline response for API requests
+            if (url.pathname.startsWith('/api/')) {
+              return new Response(
+                JSON.stringify({ 
+                  error: 'Offline', 
+                  message: 'This feature requires an internet connection' 
+                }),
+                { 
+                  status: 503, 
+                  statusText: 'Service Unavailable',
+                  headers: { 'Content-Type': 'application/json' }
+                }
+              );
+            }
+            
+            // Return a generic offline response
+            return new Response(
+              'Offline - This content is not available without an internet connection',
+              { 
+                status: 503, 
+                statusText: 'Service Unavailable',
+                headers: { 'Content-Type': 'text/plain' }
+              }
+            );
+          });
+      })
+  );
+});
+
+// Background sync for model downloads
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'model-sync') {
+    console.log('[SW] Background sync for model downloads');
+    event.waitUntil(syncModels());
+  }
+});
+
+// Push notification handling
+self.addEventListener('push', (event) => {
+  console.log('[SW] Push notification received');
+  
+  const options = {
+    body: event.data ? event.data.text() : 'New update available!',
+    icon: '/favicon.ico',
+    badge: '/favicon.ico',
+    vibrate: [100, 50, 100],
+    data: {
+      dateOfArrival: Date.now(),
+      primaryKey: 1
+    },
+    actions: [
+      {
+        action: 'explore',
+        title: 'Open App',
+        icon: '/favicon.ico'
+      },
+      {
+        action: 'close',
+        title: 'Close',
+        icon: '/favicon.ico'
+      }
+    ]
+  };
+  
+  event.waitUntil(
+    self.registration.showNotification('Neural Style Transfer', options)
+  );
+});
+
+// Notification click handling
+self.addEventListener('notificationclick', (event) => {
+  console.log('[SW] Notification clicked');
+  
+  event.notification.close();
+  
+  if (event.action === 'explore') {
+    event.waitUntil(
+      clients.openWindow('/')
     );
   }
 });
 
-// Background sync for model preloading
-self.addEventListener('sync', (event) => {
-  if (event.tag === 'preload-models') {
-    console.log('[SW] Preloading models in background...');
-    event.waitUntil(preloadModels());
-  }
-});
-
-// Preload all models for offline use
-async function preloadModels() {
+// Helper function to sync models in background
+async function syncModels() {
   try {
-    const cache = await caches.open(DYNAMIC_CACHE);
+    console.log('[SW] Syncing models in background...');
+    
+    // Pre-cache all model files
     const modelUrls = [
       '/models/van_gogh_starry_night.onnx',
       '/models/picasso_cubist.onnx',
@@ -144,64 +224,36 @@ async function preloadModels() {
       '/models/monet_water_lilies.onnx',
       '/models/anime_studio_ghibli.onnx'
     ];
-
-    for (const modelUrl of modelUrls) {
+    
+    const cache = await caches.open(STATIC_CACHE);
+    
+    for (const url of modelUrls) {
       try {
-        const response = await fetch(modelUrl);
+        const response = await fetch(url);
         if (response.ok) {
-          await cache.put(modelUrl, response);
-          console.log('[SW] Preloaded model:', modelUrl);
+          await cache.put(url, response);
+          console.log('[SW] Model cached:', url);
         }
       } catch (error) {
-        console.warn('[SW] Failed to preload model:', modelUrl, error);
+        console.warn('[SW] Failed to cache model:', url, error);
       }
     }
     
-    console.log('[SW] Model preloading completed');
+    console.log('[SW] Model sync completed');
   } catch (error) {
-    console.error('[SW] Model preloading failed:', error);
+    console.error('[SW] Model sync failed:', error);
   }
 }
 
-// Handle push notifications (for future features)
-self.addEventListener('push', (event) => {
-  console.log('[SW] Push notification received:', event);
-  
-  const options = {
-    body: 'Neural Style Transfer is ready to use!',
-    icon: '/favicon.ico',
-    badge: '/favicon.ico',
-    vibrate: [100, 50, 100],
-    data: {
-      dateOfArrival: Date.now(),
-      primaryKey: 1
-    }
-  };
-
-  event.waitUntil(
-    self.registration.showNotification('Neural Style Transfer', options)
-  );
-});
-
-// Handle notification clicks
-self.addEventListener('notificationclick', (event) => {
-  console.log('[SW] Notification clicked:', event);
-  event.notification.close();
-  
-  event.waitUntil(
-    clients.openWindow('/')
-  );
-});
-
-// Handle message events from main thread
+// Message handling for communication with main thread
 self.addEventListener('message', (event) => {
-  console.log('[SW] Message received:', event.data);
-  
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }
   
-  if (event.data && event.data.type === 'PRELOAD_MODELS') {
-    preloadModels();
+  if (event.data && event.data.type === 'CACHE_MODELS') {
+    event.waitUntil(syncModels());
   }
 });
+
+console.log('[SW] Service worker script loaded');
