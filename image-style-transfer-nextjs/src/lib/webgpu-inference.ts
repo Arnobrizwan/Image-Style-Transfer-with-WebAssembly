@@ -291,13 +291,40 @@ export class WebGPUInferenceEngineImpl implements WebGPUInferenceEngine {
 
   async unloadModel(modelName: string) {
     console.log(`[WebGPU] Unloading model: ${modelName}`);
-    // WebGPU doesn't need per-model cleanup, but we can log it
-    // In a real implementation, you might want to clear model-specific buffers
+    
+    // Clean up model-specific resources
+    if (this.modelBuffer) {
+      this.modelBuffer.destroy();
+      this.modelBuffer = null;
+    }
+    
+    // Clean up compute pipeline and bind group
+    if (this.pipeline) {
+      this.pipeline = null;
+    }
+    
+    if (this.bindGroup) {
+      this.bindGroup = null;
+    }
+    
+    // Reset model loaded state
+    this.modelLoaded = false;
+    
+    console.log(`[WebGPU] Model ${modelName} resources cleaned up`);
   }
 
   async unloadAllModels() {
     console.log('[WebGPU] Unloading all models');
-    // WebGPU doesn't need per-model cleanup, but we can log it
+    
+    // Clean up all GPU resources
+    this.dispose();
+    
+    // Reset all state
+    this.modelLoaded = false;
+    this.pipeline = null;
+    this.bindGroup = null;
+    
+    console.log('[WebGPU] All model resources cleaned up');
   }
 }
 

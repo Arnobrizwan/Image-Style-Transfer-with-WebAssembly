@@ -218,8 +218,20 @@ impl StyleTransferEngine {
     pub fn unload_model(&mut self, model_name: &str) -> Result<(), JsValue> {
         if self.loaded_models.contains_key(model_name) {
             console_log!("Unloading model: {}", model_name);
+            
+            // Remove from both tracking maps
             self.loaded_models.remove(model_name);
             self.tract_models.remove(model_name);
+            
+            // Force garbage collection hint
+            if let Ok(js_global) = js_sys::global().dyn_into::<js_sys::Object>() {
+                if let Ok(gc) = js_sys::Reflect::get(&js_global, &"gc".into()) {
+                    if let Ok(gc_fn) = gc.dyn_into::<js_sys::Function>() {
+                        let _ = gc_fn.call0(&js_sys::global());
+                    }
+                }
+            }
+            
             console_log!("Model unloaded successfully: {}", model_name);
         } else {
             console_log!("Model not loaded: {}", model_name);
@@ -230,8 +242,20 @@ impl StyleTransferEngine {
     #[wasm_bindgen]
     pub fn unload_all_models(&mut self) -> Result<(), JsValue> {
         console_log!("Unloading all models...");
+        
+        // Clear both tracking maps
         self.loaded_models.clear();
         self.tract_models.clear();
+        
+        // Force garbage collection hint
+        if let Ok(js_global) = js_sys::global().dyn_into::<js_sys::Object>() {
+            if let Ok(gc) = js_sys::Reflect::get(&js_global, &"gc".into()) {
+                if let Ok(gc_fn) = gc.dyn_into::<js_sys::Function>() {
+                    let _ = gc_fn.call0(&js_sys::global());
+                }
+            }
+        }
+        
         console_log!("All models unloaded");
         Ok(())
     }

@@ -714,6 +714,11 @@ export async function unloadModel(modelName) {
       await webgpuEngine.unloadModel(modelName);
     }
     
+    // Force garbage collection hint
+    if (typeof window !== 'undefined' && window.gc) {
+      window.gc();
+    }
+    
     console.log(`[Memory] Model unloaded: ${modelName}`);
   } catch (error) {
     console.warn(`[Memory] Failed to unload model ${modelName}:`, error);
@@ -753,6 +758,31 @@ export async function unloadAllModels() {
  */
 export function getLoadedModels() {
   return Array.from(loadedModels);
+}
+
+/**
+ * Get memory usage information
+ * @returns {Object} Memory usage stats
+ */
+export function getMemoryStats() {
+  const stats = {
+    loadedModels: Array.from(loadedModels),
+    modelCount: loadedModels.size,
+    wasmLoaded: !!wasmModule,
+    webgpuLoaded: !!webgpuEngine,
+    isLoading: isLoading
+  };
+  
+  // Add performance memory info if available
+  if (typeof window !== 'undefined' && window.performance && window.performance.memory) {
+    stats.memoryUsage = {
+      used: Math.round(window.performance.memory.usedJSHeapSize / 1024 / 1024) + ' MB',
+      total: Math.round(window.performance.memory.totalJSHeapSize / 1024 / 1024) + ' MB',
+      limit: Math.round(window.performance.memory.jsHeapSizeLimit / 1024 / 1024) + ' MB'
+    };
+  }
+  
+  return stats;
 }
 
 /**
