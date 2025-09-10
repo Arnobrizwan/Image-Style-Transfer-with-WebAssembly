@@ -1,9 +1,11 @@
 // Service Worker for Neural Style Transfer App
 // Provides offline support and caching for WASM, models, and assets
 
-const CACHE_NAME = 'neural-style-transfer-v1.0.0';
-const STATIC_CACHE = 'neural-style-static-v1.0.0';
-const DYNAMIC_CACHE = 'neural-style-dynamic-v1.0.0';
+const CACHE_VERSION = 'v1.1.0';
+const CACHE_NAME = `neural-style-transfer-${CACHE_VERSION}`;
+const STATIC_CACHE = `neural-style-static-${CACHE_VERSION}`;
+const DYNAMIC_CACHE = `neural-style-dynamic-${CACHE_VERSION}`;
+const MODEL_CACHE = `neural-style-models-${CACHE_VERSION}`;
 
 // Essential assets to cache for offline functionality
 const STATIC_ASSETS = [
@@ -12,15 +14,19 @@ const STATIC_ASSETS = [
   '/manifest.json',
   '/wasm/style_transfer_wasm.js',
   '/wasm/style_transfer_wasm_bg.wasm',
+  '/_next/static/css/',
+  '/_next/static/js/',
+  '/favicon.ico'
+];
+
+// Model files that need special handling for updates
+const MODEL_ASSETS = [
   '/models/registry.json',
   '/models/van_gogh_starry_night.onnx',
   '/models/picasso_cubist.onnx',
   '/models/cyberpunk_neon.onnx',
   '/models/monet_water_lilies.onnx',
-  '/models/anime_studio_ghibli.onnx',
-  '/_next/static/css/',
-  '/_next/static/js/',
-  '/favicon.ico'
+  '/models/anime_studio_ghibli.onnx'
 ];
 
 // Install event - cache essential assets
@@ -28,18 +34,48 @@ self.addEventListener('install', (event) => {
   console.log('[SW] Installing service worker...');
   
   event.waitUntil(
-    caches.open(STATIC_CACHE)
-      .then((cache) => {
-        console.log('[SW] Caching static assets...');
-        return cache.addAll(STATIC_ASSETS);
-      })
-      .then(() => {
-        console.log('[SW] Static assets cached successfully');
-        return self.skipWaiting();
-      })
-      .catch((error) => {
-        console.error('[SW] Failed to cache static assets:', error);
-      })
+    Promise.all([
+      // Cache static assets
+      caches.open(STATIC_CACHE)
+        .then((cache) => {
+          console.log('[SW] Caching static assets...');
+          return cache.addAll(STATIC_ASSETS);
+        }),
+      // Cache model assets with version checking
+      caches.open(MODEL_CACHE)
+        .then((cache) => {
+          console.log('[SW] Caching model assets...');
+          return Promise.all(MODEL_ASSETS.map(url => 
+            fetch(url + '?v=' + CACHE_VERSION)
+              .then(response => {
+                if (response.ok) {
+                  return cache.put(url, response);
+                }
+                throw new Error(`Failed to fetch ${url}`);
+              })
+              .catch(error => {
+                console.warn(`[SW] Failed to cache ${url}:`, error);
+                // Try without version parameter as fallback
+                return fetch(url)
+                  .then(response => {
+                    if (response.ok) {
+                      return cache.put(url, response);
+                    }
+                  })
+                  .catch(() => {
+                    console.warn(`[SW] Fallback failed for ${url}`);
+                  });
+              })
+          ));
+        })
+    ])
+    .then(() => {
+      console.log('[SW] All assets cached successfully');
+      return self.skipWaiting();
+    })
+    .catch((error) => {
+      console.error('[SW] Failed to cache assets:', error);
+    })
   );
 });
 
@@ -52,7 +88,7 @@ self.addEventListener('activate', (event) => {
       .then((cacheNames) => {
         return Promise.all(
           cacheNames.map((cacheName) => {
-            if (cacheName !== STATIC_CACHE && cacheName !== DYNAMIC_CACHE) {
+            if (cacheName !== STATIC_CACHE && cacheName !== DYNAMIC_CACHE && cacheName !== MODEL_CACHE) {
               console.log('[SW] Deleting old cache:', cacheName);
               return caches.delete(cacheName);
             }
@@ -104,9 +140,10 @@ self.addEventListener('fetch', (event) => {
             // Determine which cache to use based on request type
             let targetCache = DYNAMIC_CACHE;
             if (url.pathname.startsWith('/wasm/') || 
-                url.pathname.startsWith('/models/') ||
                 url.pathname.startsWith('/_next/static/')) {
               targetCache = STATIC_CACHE;
+            } else if (url.pathname.startsWith('/models/')) {
+              targetCache = MODEL_CACHE;
             }
             
             // Cache the response
@@ -216,23 +253,24 @@ async function syncModels() {
   try {
     console.log('[SW] Syncing models in background...');
     
-    // Pre-cache all model files
-    const modelUrls = [
-      '/models/van_gogh_starry_night.onnx',
-      '/models/picasso_cubist.onnx',
-      '/models/cyberpunk_neon.onnx',
-      '/models/monet_water_lilies.onnx',
-      '/models/anime_studio_ghibli.onnx'
-    ];
+    const cache = await caches.open(MODEL_CACHE);
     
-    const cache = await caches.open(STATIC_CACHE);
-    
-    for (const url of modelUrls) {
+    for (const url of MODEL_ASSETS) {
       try {
-        const response = await fetch(url);
+        // Try with version parameter first for cache busting
+        const versionedUrl = url + '?v=' + CACHE_VERSION + '&t=' + Date.now();
+        const response = await fetch(versionedUrl);
+        
         if (response.ok) {
           await cache.put(url, response);
           console.log('[SW] Model cached:', url);
+        } else {
+          // Fallback to original URL
+          const fallbackResponse = await fetch(url);
+          if (fallbackResponse.ok) {
+            await cache.put(url, fallbackResponse);
+            console.log('[SW] Model cached (fallback):', url);
+          }
         }
       } catch (error) {
         console.warn('[SW] Failed to cache model:', url, error);

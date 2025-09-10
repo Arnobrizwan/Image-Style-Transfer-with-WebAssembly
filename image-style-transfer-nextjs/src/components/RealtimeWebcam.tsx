@@ -235,10 +235,21 @@ export default function RealtimeWebcam({ engine, selectedStyle, styleStrength }:
               b = Math.min(255, b * 1.3);
           }
           
-          const strengthFactor = styleStrength / 100;
-          data[i] = data[i] * (1 - strengthFactor) + r * strengthFactor;
-          data[i + 1] = data[i + 1] * (1 - strengthFactor) + g * strengthFactor;
-          data[i + 2] = data[i + 2] * (1 - strengthFactor) + b * strengthFactor;
+          // Apply smooth blending with proper clamping
+          const strengthFactor = Math.max(0, Math.min(1, styleStrength / 100));
+          const originalR = data[i];
+          const originalG = data[i + 1];
+          const originalB = data[i + 2];
+          
+          // Smooth interpolation with gamma correction for better visual results
+          const gamma = 2.2;
+          const blendR = Math.pow(Math.pow(originalR / 255, gamma) * (1 - strengthFactor) + Math.pow(r / 255, gamma) * strengthFactor, 1 / gamma) * 255;
+          const blendG = Math.pow(Math.pow(originalG / 255, gamma) * (1 - strengthFactor) + Math.pow(g / 255, gamma) * strengthFactor, 1 / gamma) * 255;
+          const blendB = Math.pow(Math.pow(originalB / 255, gamma) * (1 - strengthFactor) + Math.pow(b / 255, gamma) * strengthFactor, 1 / gamma) * 255;
+          
+          data[i] = Math.max(0, Math.min(255, Math.round(blendR)));
+          data[i + 1] = Math.max(0, Math.min(255, Math.round(blendG)));
+          data[i + 2] = Math.max(0, Math.min(255, Math.round(blendB)));
         }
         
         ctx.putImageData(imageData, 0, 0);

@@ -37,6 +37,8 @@ pub struct StyleTransferEngine {
     loaded_models: HashMap<String, Vec<u8>>,
     model_registry: Vec<ModelMetadata>,
     webgpu_available: bool,
+    webgpu_adapter: Option<js_sys::Object>,
+    webgpu_device: Option<js_sys::Object>,
     tract_models: HashMap<String, SimplePlan<TypedFact, Box<dyn TypedOp>, Graph<TypedFact, Box<dyn TypedOp>>>>,
 }
 
@@ -98,6 +100,8 @@ impl StyleTransferEngine {
             loaded_models: HashMap::new(),
             model_registry,
             webgpu_available: false,
+            webgpu_adapter: None,
+            webgpu_device: None,
             tract_models: HashMap::new(),
         }
     }
@@ -162,6 +166,9 @@ impl StyleTransferEngine {
         
         console_log!("WebGPU adapter obtained successfully");
         
+        // Store the adapter
+        self.webgpu_adapter = Some(adapter_result.clone().into());
+        
         // Request device
         let device_promise = js_sys::Reflect::get(&adapter_result, &"requestDevice".into())
             .map_err(|_| "Failed to get requestDevice")?;
@@ -173,16 +180,38 @@ impl StyleTransferEngine {
         let device_promise_js = device_promise.dyn_into::<js_sys::Promise>()
             .map_err(|_| "Failed to convert to Promise")?;
         let device_future = wasm_bindgen_futures::JsFuture::from(device_promise_js);
-        let _device = device_future.await
+        let device_result = device_future.await
             .map_err(|_| "Failed to get device")?;
         
-        console_log!("WebGPU device obtained successfully");
+        if device_result.is_null() || device_result.is_undefined() {
+            return Err("No WebGPU device available".into());
+        }
+        
+        // Store the device
+        self.webgpu_device = Some(device_result.into());
+        
+        console_log!("WebGPU device obtained and stored successfully");
         Ok(())
     }
 
     #[wasm_bindgen]
     pub fn get_models(&self) -> JsValue {
         serde_wasm_bindgen::to_value(&self.model_registry).unwrap()
+    }
+
+    #[wasm_bindgen]
+    pub fn is_webgpu_ready(&self) -> bool {
+        self.webgpu_available && self.webgpu_adapter.is_some() && self.webgpu_device.is_some()
+    }
+
+    #[wasm_bindgen]
+    pub fn get_webgpu_device(&self) -> Option<js_sys::Object> {
+        self.webgpu_device.clone()
+    }
+
+    #[wasm_bindgen]
+    pub fn get_webgpu_adapter(&self) -> Option<js_sys::Object> {
+        self.webgpu_adapter.clone()
     }
 
     #[wasm_bindgen]

@@ -3,6 +3,7 @@ let isLoading = false;
 let loadPromise = null;
 let registryModels = null;
 let webgpuEngine = null;
+let loadedModels = new Set(); // Track loaded models to prevent memory leaks
 
 /**
  * Load models from registry.json
@@ -473,25 +474,56 @@ async function initializeWebGPU() {
   try {
     console.log('[WebGPU] Initializing WebGPU engine...');
     
-    // Dynamic import to avoid bundling issues
-    const { createInferenceEngine } = await import('./webgpu-inference');
-    webgpuEngine = await createInferenceEngine();
-    
-    if (webgpuEngine) {
-      console.log('[WebGPU] WebGPU engine initialized successfully');
+    // Check if WASM engine has WebGPU ready
+    if (wasmModule && wasmModule.is_webgpu_ready && wasmModule.is_webgpu_ready()) {
+      console.log('[WebGPU] WASM engine has WebGPU ready, using integrated WebGPU');
       
-      // Pre-load models for WebGPU
+      // Pre-load models for WebGPU (only if not already loaded)
       const models = await loadRegistryModels();
       for (const model of models) {
-        try {
-          await webgpuEngine.loadModel(model.model_url);
-          console.log(`[WebGPU] Model loaded: ${model.name}`);
-        } catch (error) {
-          console.warn(`[WebGPU] Failed to load model ${model.name}:`, error);
+        if (!loadedModels.has(model.name)) {
+          try {
+            await wasmModule.load_model(model.name);
+            loadedModels.add(model.name);
+            console.log(`[WebGPU] Model loaded via WASM: ${model.name}`);
+          } catch (error) {
+            console.warn(`[WebGPU] Failed to load model ${model.name}:`, error);
+          }
         }
       }
+      
+      // Mark WebGPU as available
+      webgpuEngine = { 
+        isReady: true, 
+        device: wasmModule.get_webgpu_device(),
+        adapter: wasmModule.get_webgpu_adapter()
+      };
+      
     } else {
-      console.log('[WebGPU] WebGPU not available, using CPU fallback');
+      // Fallback to separate WebGPU engine
+      console.log('[WebGPU] Using separate WebGPU engine...');
+      const { createInferenceEngine } = await import('./webgpu-inference');
+      webgpuEngine = await createInferenceEngine();
+      
+      if (webgpuEngine) {
+        console.log('[WebGPU] WebGPU engine initialized successfully');
+        
+        // Pre-load models for WebGPU (only if not already loaded)
+        const models = await loadRegistryModels();
+        for (const model of models) {
+          if (!loadedModels.has(model.name)) {
+            try {
+              await webgpuEngine.loadModel(model.model_url);
+              loadedModels.add(model.name);
+              console.log(`[WebGPU] Model loaded: ${model.name}`);
+            } catch (error) {
+              console.warn(`[WebGPU] Failed to load model ${model.name}:`, error);
+            }
+          }
+        }
+      } else {
+        console.log('[WebGPU] WebGPU not available, using CPU fallback');
+      }
     }
   } catch (error) {
     console.warn('[WebGPU] WebGPU initialization failed:', error);
@@ -593,7 +625,46 @@ export function getWebGPUEngine() {
  * @returns {boolean} True if WebGPU is available
  */
 export function isWebGPUAvailable() {
-  return webgpuEngine !== null;
+  // Check if we have a WebGPU engine available
+  if (webgpuEngine && webgpuEngine.isReady) {
+    return true;
+  }
+  
+  // Check if WASM engine has WebGPU ready
+  if (wasmModule && wasmModule.is_webgpu_ready && wasmModule.is_webgpu_ready()) {
+    return true;
+  }
+  
+  return false;
+}
+
+/**
+ * Clean up resources to prevent memory leaks
+ * @returns {void}
+ */
+export function cleanup() {
+  console.log('[Cleanup] Cleaning up resources...');
+  
+  // Clear loaded models tracking
+  loadedModels.clear();
+  
+  // Clean up WebGPU engine
+  if (webgpuEngine && webgpuEngine.destroy) {
+    webgpuEngine.destroy();
+  }
+  webgpuEngine = null;
+  
+  // Clean up WASM module
+  if (wasmModule && wasmModule.destroy) {
+    wasmModule.destroy();
+  }
+  wasmModule = null;
+  
+  // Reset loading state
+  isLoading = false;
+  loadPromise = null;
+  
+  console.log('[Cleanup] Resources cleaned up');
 }
 
 /**
@@ -605,48 +676,59 @@ export function isWebGPUAvailable() {
  */
 export async function processImageWithBestEngine(imageDataUrl, styleName, strength) {
   // Try WebGPU first if available
-  if (webgpuEngine) {
+  if (isWebGPUAvailable()) {
     try {
       console.log('[Engine] Using WebGPU acceleration');
       
-      // Convert data URL to ImageData
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
+      // If WASM engine has WebGPU ready, use it directly
+      if (wasmModule && wasmModule.is_webgpu_ready && wasmModule.is_webgpu_ready()) {
+        console.log('[WebGPU] Using WASM-integrated WebGPU');
+        return await wasmModule.process_image(imageDataUrl, styleName, strength);
+      }
       
-      return new Promise((resolve, reject) => {
-        img.onload = async () => {
-          try {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            canvas.width = img.width;
-            canvas.height = img.height;
-            ctx.drawImage(img, 0, 0);
-            
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const processedImageData = await webgpuEngine.processImage(imageData, strength);
-            
-            // Convert back to data URL
-            const resultCanvas = document.createElement('canvas');
-            const resultCtx = resultCanvas.getContext('2d');
-            resultCanvas.width = processedImageData.width;
-            resultCanvas.height = processedImageData.height;
-            resultCtx.putImageData(processedImageData, 0, 0);
-            
-            resolve(resultCanvas.toDataURL('image/png'));
-          } catch (error) {
-            console.warn('[WebGPU] Processing failed, falling back to WASM:', error);
-            // Fall back to WASM
-            if (wasmModule) {
-              resolve(await wasmModule.process_image(imageDataUrl, styleName, strength));
-            } else {
-              reject(error);
-            }
-          }
-        };
+      // Otherwise use separate WebGPU engine
+      if (webgpuEngine && webgpuEngine.processImage) {
+        console.log('[WebGPU] Using separate WebGPU engine');
         
-        img.onerror = () => reject(new Error('Failed to load image'));
-        img.src = imageDataUrl;
-      });
+        // Convert data URL to ImageData
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        
+        return new Promise((resolve, reject) => {
+          img.onload = async () => {
+            try {
+              const canvas = document.createElement('canvas');
+              const ctx = canvas.getContext('2d');
+              canvas.width = img.width;
+              canvas.height = img.height;
+              ctx.drawImage(img, 0, 0);
+              
+              const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              const processedImageData = await webgpuEngine.processImage(imageData, strength);
+              
+              // Convert back to data URL
+              const resultCanvas = document.createElement('canvas');
+              const resultCtx = resultCanvas.getContext('2d');
+              resultCanvas.width = processedImageData.width;
+              resultCanvas.height = processedImageData.height;
+              resultCtx.putImageData(processedImageData, 0, 0);
+              
+              resolve(resultCanvas.toDataURL('image/png'));
+            } catch (error) {
+              console.warn('[WebGPU] Processing failed, falling back to WASM:', error);
+              // Fall back to WASM
+              if (wasmModule) {
+                resolve(await wasmModule.process_image(imageDataUrl, styleName, strength));
+              } else {
+                reject(error);
+              }
+            }
+          };
+          
+          img.onerror = () => reject(new Error('Failed to load image'));
+          img.src = imageDataUrl;
+        });
+      }
     } catch (error) {
       console.warn('[WebGPU] WebGPU processing failed, falling back to WASM:', error);
     }

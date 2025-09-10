@@ -292,10 +292,21 @@ export default function StyleTransferChatbot() {
               break;
           }
           
-          const strengthFactor = strength / 100;
-          data[i] = data[i] * (1 - strengthFactor) + r * strengthFactor;
-          data[i + 1] = data[i + 1] * (1 - strengthFactor) + g * strengthFactor;
-          data[i + 2] = data[i + 2] * (1 - strengthFactor) + b * strengthFactor;
+          // Apply smooth blending with proper clamping
+          const strengthFactor = Math.max(0, Math.min(1, strength / 100));
+          const originalR = data[i];
+          const originalG = data[i + 1];
+          const originalB = data[i + 2];
+          
+          // Smooth interpolation with gamma correction for better visual results
+          const gamma = 2.2;
+          const blendR = Math.pow(Math.pow(originalR / 255, gamma) * (1 - strengthFactor) + Math.pow(r / 255, gamma) * strengthFactor, 1 / gamma) * 255;
+          const blendG = Math.pow(Math.pow(originalG / 255, gamma) * (1 - strengthFactor) + Math.pow(g / 255, gamma) * strengthFactor, 1 / gamma) * 255;
+          const blendB = Math.pow(Math.pow(originalB / 255, gamma) * (1 - strengthFactor) + Math.pow(b / 255, gamma) * strengthFactor, 1 / gamma) * 255;
+          
+          data[i] = Math.max(0, Math.min(255, Math.round(blendR)));
+          data[i + 1] = Math.max(0, Math.min(255, Math.round(blendG)));
+          data[i + 2] = Math.max(0, Math.min(255, Math.round(blendB)));
         }
         
         ctx.putImageData(imageData, 0, 0);
@@ -363,16 +374,42 @@ export default function StyleTransferChatbot() {
   };
 
   const resetSession = () => {
+    // Clear all state
     setCurrentImage(null);
     setSelectedStyle('');
     setStyleStrength(80);
     setShowWebcam(false);
+    setIsProcessing(false);
+    setShowImageModal(false);
+    setModalImage('');
+    setModalTitle('');
+    setIsControlsCollapsed(false);
+    setWasmLoaded(false);
+    setEngine(null);
+    setModels([]);
+    
+    // Reset global WASM engine
+    wasmEngine = null;
+    
+    // Clean up resources to prevent memory leaks
+    if (typeof window !== 'undefined') {
+      import('../lib/wasmLoader').then(({ cleanup }) => {
+        cleanup();
+      }).catch(console.error);
+    }
+    
+    // Set welcome message
     setMessages([{
       id: 'welcome-reset',
       role: 'assistant',
       content: '🔄 Session reset! All settings restored to defaults. Upload a new image to begin your neural style transfer journey!',
       timestamp: new Date(),
     }]);
+    
+    // Re-initialize after a brief delay to ensure clean state
+    setTimeout(() => {
+      setIsInitialized(true);
+    }, 100);
   };
 
   // Show loading state until initialized
