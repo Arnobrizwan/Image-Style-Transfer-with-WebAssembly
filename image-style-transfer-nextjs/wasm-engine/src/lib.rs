@@ -547,10 +547,26 @@ impl StyleTransferEngine {
     }
 
     fn blend_tensors(&self, original: &[f32], stylized: &[f32], strength: f32) -> Vec<f32> {
-        original.iter()
-            .zip(stylized.iter())
-            .map(|(orig, style)| orig * (1.0 - strength) + style * strength)
-            .collect()
+        // Ensure both tensors have the same length
+        let min_len = original.len().min(stylized.len());
+        let mut blended = Vec::with_capacity(min_len);
+        
+        for i in 0..min_len {
+            let orig = original[i];
+            let style = stylized[i];
+            
+            // Apply proper blending with gamma correction for better visual results
+            let gamma = 2.2;
+            let orig_gamma = orig.powf(gamma);
+            let style_gamma = style.powf(gamma);
+            let blended_gamma = orig_gamma * (1.0 - strength) + style_gamma * strength;
+            let blended_value = blended_gamma.powf(1.0 / gamma);
+            
+            // Clamp to valid range
+            blended.push(blended_value.clamp(0.0, 1.0));
+        }
+        
+        blended
     }
 
     #[wasm_bindgen]
