@@ -95,6 +95,17 @@ export class WebGPUInferenceEngineImpl implements WebGPUInferenceEngine {
 
     const { width, height, data } = imageData;
     
+    // Validate input dimensions match model requirements (256x256)
+    if (width !== 256 || height !== 256) {
+      console.warn(`[WebGPU] Input dimensions ${width}x${height} don't match model requirements (256x256). Processing anyway...`);
+    }
+    
+    // Validate style strength range
+    const clampedStrength = Math.max(0, Math.min(1, styleStrength));
+    if (clampedStrength !== styleStrength) {
+      console.warn(`[WebGPU] Style strength ${styleStrength} clamped to ${clampedStrength}`);
+    }
+    
     // Create input buffer
     this.inputBuffer = this.device.createBuffer({
       size: data.byteLength,
@@ -114,15 +125,15 @@ export class WebGPUInferenceEngineImpl implements WebGPUInferenceEngine {
     const shaderModule = this.device.createShaderModule({
       code: `
         struct Uniforms {
-          width: u32,
-          height: u32,
+          width: f32, // Cast from f32 to u32 in shader
+          height: f32, // Cast from f32 to u32 in shader
           styleStrength: f32,
+          _padding: f32, // Ensure 16-byte alignment
         }
         
         @group(0) @binding(0) var<uniform> uniforms: Uniforms;
         @group(0) @binding(1) var<storage, read> input: array<f32>;
-        @group(0) @binding(2) var<storage, read> model: array<f32>;
-        @group(0) @binding(3) var<storage, read_write> output: array<f32>;
+        @group(0) @binding(2) var<storage, read_write> output: array<f32>;
         
         // Custom sin/cos approximation for WebGPU compatibility
         fn fast_sin(x: f32) -> f32 {
@@ -144,31 +155,59 @@ export class WebGPUInferenceEngineImpl implements WebGPUInferenceEngine {
           let x = global_id.x;
           let y = global_id.y;
           
-          if (x >= uniforms.width || y >= uniforms.height) {
+          // Cast f32 to u32 for comparison
+          let width = u32(uniforms.width);
+          let height = u32(uniforms.height);
+          
+          if (x >= width || y >= height) {
             return;
           }
           
-          let index = (y * uniforms.width + x) * 4;
+          let index = (y * width + x) * 4;
           let strength = uniforms.styleStrength;
+          
+          // Input validation and bounds checking
+          if (index + 3 >= arrayLength(&input)) {
+            return;
+          }
           
           // Simplified neural style transfer simulation
           // In a real implementation, this would be the actual neural network computation
           let r = input[index];
           let g = input[index + 1];
           let b = input[index + 2];
+          let a = input[index + 3]; // Preserve alpha channel
           
           // Apply style transformation based on position and model weights
           // Use custom sin/cos for better compatibility
           let swirl = fast_sin(f32(x) * 0.02) * fast_cos(f32(y) * 0.02) * 25.0;
-          let newR = min(255.0, r * 1.4 + swirl + 20.0);
-          let newG = min(255.0, g * 1.3 + swirl * 0.7 + 15.0);
-          let newB = min(255.0, b * 1.2 + swirl * 0.5 + 10.0);
+          let newR = min(1.0, r * 1.4 + swirl / 255.0 + 20.0 / 255.0);
+          let newG = min(1.0, g * 1.3 + swirl * 0.7 / 255.0 + 15.0 / 255.0);
+          let newB = min(1.0, b * 1.2 + swirl * 0.5 / 255.0 + 10.0 / 255.0);
           
-          // Blend with original based on style strength
-          output[index] = r * (1.0 - strength) + newR * strength;
-          output[index + 1] = g * (1.0 - strength) + newG * strength;
-          output[index + 2] = b * (1.0 - strength) + newB * strength;
-          output[index + 3] = input[index + 3]; // Preserve alpha
+          // Apply proper blending with gamma correction for better visual results
+          let gamma = 2.2;
+          let origR_gamma = pow(r, gamma);
+          let origG_gamma = pow(g, gamma);
+          let origB_gamma = pow(b, gamma);
+          let newR_gamma = pow(newR, gamma);
+          let newG_gamma = pow(newG, gamma);
+          let newB_gamma = pow(newB, gamma);
+          
+          let blendR_gamma = origR_gamma * (1.0 - strength) + newR_gamma * strength;
+          let blendG_gamma = origG_gamma * (1.0 - strength) + newG_gamma * strength;
+          let blendB_gamma = origB_gamma * (1.0 - strength) + newB_gamma * strength;
+          
+          // Output validation and bounds checking
+          if (index + 3 >= arrayLength(&output)) {
+            return;
+          }
+          
+          // Clamp final values to valid range and apply precision
+          output[index] = clamp(pow(blendR_gamma, 1.0 / gamma), 0.0, 1.0);
+          output[index + 1] = clamp(pow(blendG_gamma, 1.0 / gamma), 0.0, 1.0);
+          output[index + 2] = clamp(pow(blendB_gamma, 1.0 / gamma), 0.0, 1.0);
+          output[index + 3] = a; // Preserve alpha channel
         }
       `
     });
@@ -187,14 +226,12 @@ export class WebGPUInferenceEngineImpl implements WebGPUInferenceEngine {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     
-    // Create properly aligned uniform data
-    const uniformData = new Uint32Array(4); // 4 * 4 bytes = 16 bytes
-    uniformData[0] = width;
-    uniformData[1] = height;
-    // Convert f32 to u32 for proper alignment
-    const strengthBytes = new Uint32Array(new Float32Array([styleStrength]).buffer);
-    uniformData[2] = strengthBytes[0];
-    uniformData[3] = 0; // Padding
+    // Create properly aligned uniform data matching the struct
+    const uniformData = new Float32Array(4); // 4 * 4 bytes = 16 bytes
+    uniformData[0] = width; // u32 as f32 (will be cast in shader)
+    uniformData[1] = height; // u32 as f32 (will be cast in shader)
+    uniformData[2] = clampedStrength; // f32 (use clamped value)
+    uniformData[3] = 0.0; // Padding f32
     
     this.device.queue.writeBuffer(uniformBuffer, 0, uniformData);
     
@@ -204,8 +241,7 @@ export class WebGPUInferenceEngineImpl implements WebGPUInferenceEngine {
       entries: [
         { binding: 0, resource: { buffer: uniformBuffer } },
         { binding: 1, resource: { buffer: this.inputBuffer } },
-        { binding: 2, resource: { buffer: this.modelBuffer! } },
-        { binding: 3, resource: { buffer: this.outputBuffer } },
+        { binding: 2, resource: { buffer: this.outputBuffer } },
       ],
     });
     

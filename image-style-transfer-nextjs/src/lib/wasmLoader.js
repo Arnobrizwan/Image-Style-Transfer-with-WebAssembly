@@ -445,10 +445,35 @@ async function processImageWithCPU(imageDataUrl, styleName, strength) {
               break;
           }
           
-          const strengthFactor = strength;
-          data[i] = data[i] * (1 - strengthFactor) + r * strengthFactor;
-          data[i + 1] = data[i + 1] * (1 - strengthFactor) + g * strengthFactor;
-          data[i + 2] = data[i + 2] * (1 - strengthFactor) + b * strengthFactor;
+          // Apply proper blending with gamma correction for better visual results
+          const strengthFactor = Math.max(0, Math.min(1, strength));
+          const originalR = data[i] / 255;
+          const originalG = data[i + 1] / 255;
+          const originalB = data[i + 2] / 255;
+          const styledR = r / 255;
+          const styledG = g / 255;
+          const styledB = b / 255;
+          
+          // Apply gamma correction for better visual blending
+          const gamma = 2.2;
+          const origR_gamma = Math.pow(originalR, gamma);
+          const origG_gamma = Math.pow(originalG, gamma);
+          const origB_gamma = Math.pow(originalB, gamma);
+          const styledR_gamma = Math.pow(styledR, gamma);
+          const styledG_gamma = Math.pow(styledG, gamma);
+          const styledB_gamma = Math.pow(styledB, gamma);
+          
+          const blendR_gamma = origR_gamma * (1 - strengthFactor) + styledR_gamma * strengthFactor;
+          const blendG_gamma = origG_gamma * (1 - strengthFactor) + styledG_gamma * strengthFactor;
+          const blendB_gamma = origB_gamma * (1 - strengthFactor) + styledB_gamma * strengthFactor;
+          
+          const finalR = Math.pow(blendR_gamma, 1 / gamma) * 255;
+          const finalG = Math.pow(blendG_gamma, 1 / gamma) * 255;
+          const finalB = Math.pow(blendB_gamma, 1 / gamma) * 255;
+          
+          data[i] = Math.max(0, Math.min(255, Math.round(finalR)));
+          data[i + 1] = Math.max(0, Math.min(255, Math.round(finalG)));
+          data[i + 2] = Math.max(0, Math.min(255, Math.round(finalB)));
         }
         
         ctx.putImageData(imageData, 0, 0);

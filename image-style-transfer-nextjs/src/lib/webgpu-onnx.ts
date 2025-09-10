@@ -167,13 +167,13 @@ export class WebGPUONNXRunnerImpl implements WebGPUONNXRunner {
       },
     });
     
-    // Create uniform buffer
+    // Create uniform buffer with proper 16-byte alignment
     const uniformBuffer = this.device.createBuffer({
-      size: 12, // 3 * 4 bytes (u32, u32, f32)
+      size: 16, // 4 * 4 bytes for proper alignment
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     
-    const uniformData = new Float32Array([width, height, styleStrength]);
+    const uniformData = new Float32Array([width, height, styleStrength, 0.0]); // Add padding
     this.device.queue.writeBuffer(uniformBuffer, 0, uniformData);
     
     // Create bind group
