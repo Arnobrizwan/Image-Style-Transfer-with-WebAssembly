@@ -215,6 +215,33 @@ impl StyleTransferEngine {
     }
 
     #[wasm_bindgen]
+    pub fn unload_model(&mut self, model_name: &str) -> Result<(), JsValue> {
+        if self.loaded_models.contains_key(model_name) {
+            console_log!("Unloading model: {}", model_name);
+            self.loaded_models.remove(model_name);
+            self.tract_models.remove(model_name);
+            console_log!("Model unloaded successfully: {}", model_name);
+        } else {
+            console_log!("Model not loaded: {}", model_name);
+        }
+        Ok(())
+    }
+
+    #[wasm_bindgen]
+    pub fn unload_all_models(&mut self) -> Result<(), JsValue> {
+        console_log!("Unloading all models...");
+        self.loaded_models.clear();
+        self.tract_models.clear();
+        console_log!("All models unloaded");
+        Ok(())
+    }
+
+    #[wasm_bindgen]
+    pub fn get_loaded_models(&self) -> Vec<String> {
+        self.loaded_models.keys().cloned().collect()
+    }
+
+    #[wasm_bindgen]
     pub async fn load_model(&mut self, model_name: &str) -> Result<(), JsValue> {
         if self.loaded_models.contains_key(model_name) {
             console_log!("Model already loaded: {}", model_name);

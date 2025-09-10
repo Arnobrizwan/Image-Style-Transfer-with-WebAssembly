@@ -204,7 +204,17 @@ export default function StyleTransferChatbot() {
       let processedImageUrl: string;
 
       // Use the integrated processing function that automatically selects the best engine
-      const { processImageWithBestEngine } = await import('../lib/wasmLoader');
+      const { processImageWithBestEngine, unloadModel, getLoadedModels } = await import('../lib/wasmLoader');
+      
+      // Check if we need to unload other models to free memory
+      const loadedModels = getLoadedModels();
+      if (loadedModels.length > 2) { // Keep max 2 models in memory
+        const modelsToUnload = loadedModels.filter(name => name !== selectedStyle);
+        for (const modelName of modelsToUnload.slice(0, -1)) { // Keep the most recent one
+          await unloadModel(modelName);
+        }
+      }
+      
       processedImageUrl = await processImageWithBestEngine(currentImage, selectedStyle, styleStrength / 100);
       
       updateMessage(processingId, {

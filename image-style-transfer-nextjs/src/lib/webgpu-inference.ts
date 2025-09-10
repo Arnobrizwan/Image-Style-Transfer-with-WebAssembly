@@ -124,6 +124,21 @@ export class WebGPUInferenceEngineImpl implements WebGPUInferenceEngine {
         @group(0) @binding(2) var<storage, read> model: array<f32>;
         @group(0) @binding(3) var<storage, read_write> output: array<f32>;
         
+        // Custom sin/cos approximation for WebGPU compatibility
+        fn fast_sin(x: f32) -> f32 {
+          let x2 = x * x;
+          let x3 = x2 * x;
+          let x5 = x3 * x2;
+          return x - x3 / 6.0 + x5 / 120.0;
+        }
+        
+        fn fast_cos(x: f32) -> f32 {
+          let x2 = x * x;
+          let x4 = x2 * x2;
+          let x6 = x4 * x2;
+          return 1.0 - x2 / 2.0 + x4 / 24.0 - x6 / 720.0;
+        }
+        
         @compute @workgroup_size(8, 8)
         fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
           let x = global_id.x;
@@ -143,7 +158,8 @@ export class WebGPUInferenceEngineImpl implements WebGPUInferenceEngine {
           let b = input[index + 2];
           
           // Apply style transformation based on position and model weights
-          let swirl = sin(f32(x) * 0.02) * cos(f32(y) * 0.02) * 25.0;
+          // Use custom sin/cos for better compatibility
+          let swirl = fast_sin(f32(x) * 0.02) * fast_cos(f32(y) * 0.02) * 25.0;
           let newR = min(255.0, r * 1.4 + swirl + 20.0);
           let newG = min(255.0, g * 1.3 + swirl * 0.7 + 15.0);
           let newB = min(255.0, b * 1.2 + swirl * 0.5 + 10.0);
@@ -165,13 +181,21 @@ export class WebGPUInferenceEngineImpl implements WebGPUInferenceEngine {
       },
     });
     
-    // Create uniform buffer
+    // Create uniform buffer with proper size and alignment
     const uniformBuffer = this.device.createBuffer({
-      size: 12, // 3 * 4 bytes (u32, u32, f32)
+      size: 16, // 16 bytes for proper alignment (u32, u32, f32, padding)
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     
-    const uniformData = new Float32Array([width, height, styleStrength]);
+    // Create properly aligned uniform data
+    const uniformData = new Uint32Array(4); // 4 * 4 bytes = 16 bytes
+    uniformData[0] = width;
+    uniformData[1] = height;
+    // Convert f32 to u32 for proper alignment
+    const strengthBytes = new Uint32Array(new Float32Array([styleStrength]).buffer);
+    uniformData[2] = strengthBytes[0];
+    uniformData[3] = 0; // Padding
+    
     this.device.queue.writeBuffer(uniformBuffer, 0, uniformData);
     
     // Create bind group
@@ -227,6 +251,17 @@ export class WebGPUInferenceEngineImpl implements WebGPUInferenceEngine {
     this.inputBuffer?.destroy();
     this.outputBuffer?.destroy();
     this.modelBuffer?.destroy();
+  }
+
+  async unloadModel(modelName: string) {
+    console.log(`[WebGPU] Unloading model: ${modelName}`);
+    // WebGPU doesn't need per-model cleanup, but we can log it
+    // In a real implementation, you might want to clear model-specific buffers
+  }
+
+  async unloadAllModels() {
+    console.log('[WebGPU] Unloading all models');
+    // WebGPU doesn't need per-model cleanup, but we can log it
   }
 }
 

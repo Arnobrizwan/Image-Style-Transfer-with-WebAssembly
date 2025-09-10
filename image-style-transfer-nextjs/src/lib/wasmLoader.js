@@ -668,6 +668,69 @@ export function cleanup() {
 }
 
 /**
+ * Unload a specific model to free memory
+ * @param {string} modelName - Name of the model to unload
+ * @returns {Promise<void>}
+ */
+export async function unloadModel(modelName) {
+  try {
+    console.log(`[Memory] Unloading model: ${modelName}`);
+    
+    // Remove from tracking
+    loadedModels.delete(modelName);
+    
+    // Unload from WASM engine if available
+    if (wasmModule && wasmModule.unload_model) {
+      await wasmModule.unload_model(modelName);
+    }
+    
+    // Unload from WebGPU engine if available
+    if (webgpuEngine && webgpuEngine.unloadModel) {
+      await webgpuEngine.unloadModel(modelName);
+    }
+    
+    console.log(`[Memory] Model unloaded: ${modelName}`);
+  } catch (error) {
+    console.warn(`[Memory] Failed to unload model ${modelName}:`, error);
+  }
+}
+
+/**
+ * Unload all models to free memory
+ * @returns {Promise<void>}
+ */
+export async function unloadAllModels() {
+  try {
+    console.log('[Memory] Unloading all models...');
+    
+    // Clear tracking
+    loadedModels.clear();
+    
+    // Unload from WASM engine if available
+    if (wasmModule && wasmModule.unload_all_models) {
+      await wasmModule.unload_all_models();
+    }
+    
+    // Unload from WebGPU engine if available
+    if (webgpuEngine && webgpuEngine.unloadAllModels) {
+      await webgpuEngine.unloadAllModels();
+    }
+    
+    console.log('[Memory] All models unloaded');
+  } catch (error) {
+    console.warn('[Memory] Failed to unload all models:', error);
+  }
+}
+
+/**
+ * Get currently loaded models
+ * @returns {Array<string>} Array of loaded model names
+ */
+export function getLoadedModels() {
+  return Array.from(loadedModels);
+}
+
+/**
  * Process image with the best available engine (WebGPU > WASM > CPU)
  * @param {string} imageDataUrl - Image data URL
  * @param {string} styleName - Style name
